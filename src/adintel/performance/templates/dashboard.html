@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meta Ads Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-soft: #eef3f2;
+      --line: #d9dee4;
+      --text: #1e242b;
+      --muted: #68727f;
+      --accent: #087f8c;
+      --accent-2: #b23a48;
+      --amber: #b7791f;
+      --good: #247a4d;
+      --shadow: 0 1px 2px rgba(22, 29, 37, .08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .shell {
+      width: min(1440px, calc(100vw - 32px));
+      margin: 0 auto;
+    }
+    .topbar {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.15;
+      font-weight: 760;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--good);
+    }
+    main { padding: 18px 0 32px; }
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(120px, 1fr)) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+    label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    select, input, button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 14px;
+    }
+    select, input {
+      width: 100%;
+      padding: 0 10px;
+    }
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 12px;
+      cursor: pointer;
+      font-weight: 700;
+      box-shadow: var(--shadow);
+    }
+    button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    button.ghost {
+      background: var(--surface);
+    }
+    button:disabled {
+      cursor: progress;
+      opacity: .65;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(120px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .kpi {
+      min-height: 96px;
+      padding: 13px;
+      display: grid;
+      align-content: space-between;
+    }
+    .kpi .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .kpi .value {
+      margin-top: 8px;
+      font-size: 23px;
+      line-height: 1.1;
+      font-weight: 780;
+      overflow-wrap: anywhere;
+    }
+    .kpi .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.4fr .8fr;
+      gap: 14px;
+      align-items: start;
+    }
+    .panel {
+      padding: 14px;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+    .muted { color: var(--muted); }
+    .chart-wrap {
+      position: relative;
+      height: 320px;
+    }
+    .alerts {
+      display: grid;
+      gap: 8px;
+      max-height: 320px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .alert {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--amber);
+      border-radius: 7px;
+      background: #fffaf0;
+      padding: 10px;
+      font-size: 13px;
+    }
+    .alert.critical {
+      border-left-color: var(--accent-2);
+      background: #fff5f6;
+    }
+    .alert .title {
+      font-weight: 760;
+      margin-bottom: 4px;
+    }
+    .tables {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .wide {
+      grid-column: 1 / -1;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 410px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      min-width: 720px;
+    }
+    th, td {
+      padding: 10px 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+    th:first-child, td:first-child {
+      text-align: left;
+      white-space: normal;
+      min-width: 210px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+      z-index: 1;
+    }
+    .empty {
+      padding: 28px 12px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+    .error {
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid #e3a1a8;
+      border-radius: 7px;
+      color: #8f1d2c;
+      background: #fff5f6;
+      display: none;
+    }
+
+    @media (max-width: 1180px) {
+      .filters { grid-template-columns: repeat(3, 1fr); }
+      .kpis { grid-template-columns: repeat(4, minmax(120px, 1fr)); }
+      .grid, .tables { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      .shell { width: min(100vw - 20px, 1440px); }
+      .topbar { align-items: flex-start; flex-direction: column; padding: 14px 0; }
+      .status { white-space: normal; }
+      .filters, .kpis { grid-template-columns: 1fr 1fr; }
+      .filters button { min-width: 0; }
+      .chart-wrap { height: 270px; }
+    }
+    @media (max-width: 460px) {
+      .filters, .kpis { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell topbar">
+      <h1>Meta Ads Monitor</h1>
+      <div class="status">
+        <span class="dot" id="statusDot"></span>
+        <span id="syncStatus">동기화 상태 확인 중</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="error" id="errorBox"></div>
+    <section class="filters">
+      <label>계정
+        <select id="accountFilter"></select>
+      </label>
+      <label>캠페인
+        <select id="campaignFilter"></select>
+      </label>
+      <label>광고
+        <select id="adFilter"></select>
+      </label>
+      <label>시작일
+        <input id="startDate" type="date">
+      </label>
+      <label>종료일
+        <input id="endDate" type="date">
+      </label>
+      <label>추이 단위
+        <select id="trendGrain">
+          <option value="daily">일별</option>
+          <option value="weekly">주별</option>
+          <option value="monthly">월별</option>
+        </select>
+      </label>
+      <label>목표 이벤트
+        <select id="targetAction">
+          <option value="landing_click">홈페이지 클릭</option>
+          <option value="purchase">Purchase</option>
+          <option value="lead">Lead</option>
+          <option value="complete_registration">Complete registration</option>
+          <option value="contact">Contact</option>
+        </select>
+      </label>
+      <button class="primary" id="syncButton" type="button" title="수동 동기화">
+        <i data-lucide="refresh-cw" size="17"></i>
+        Sync
+      </button>
+    </section>
+
+    <section class="kpis" id="kpis"></section>
+
+    <section class="grid">
+      <div class="card panel">
+        <div class="panel-head">
+          <h2>성과 추이</h2>
+          <span class="muted" id="trendMeta"></span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+      <div class="card panel">
+        <div class="panel-head">
+          <h2>이상 징후</h2>
+          <button class="ghost" id="reloadButton" type="button" title="새로고침">
+            <i data-lucide="rotate-cw" size="16"></i>
+          </button>
+        </div>
+        <div class="alerts" id="alerts"></div>
+      </div>
+    </section>
+
+    <section class="tables">
+      <div class="card panel wide">
+        <div class="panel-head"><h2>플랫폼별 게재 현황</h2></div>
+        <div class="table-wrap" id="platformTable"></div>
+      </div>
+      <div class="card panel">
+        <div class="panel-head"><h2>계정별 효율</h2></div>
+        <div class="table-wrap" id="accountTable"></div>
+      </div>
+      <div class="card panel">
+        <div class="panel-head"><h2>캠페인 랭킹</h2></div>
+        <div class="table-wrap" id="campaignTable"></div>
+      </div>
+      <div class="card panel">
+        <div class="panel-head"><h2>광고세트 랭킹</h2></div>
+        <div class="table-wrap" id="adsetTable"></div>
+      </div>
+      <div class="card panel">
+        <div class="panel-head"><h2>광고 랭킹</h2></div>
+        <div class="table-wrap" id="adTable"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const money = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
+    const compact = new Intl.NumberFormat("ko-KR", { notation: "compact", maximumFractionDigits: 1 });
+    const number = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
+    const initialUrlParams = new URLSearchParams(window.location.search);
+    let trendChart;
+    let allAds = [];
+
+    function todayISO(offsetDays = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function params() {
+      const q = new URLSearchParams();
+      for (const [key, id] of [
+        ["account_id", "accountFilter"],
+        ["campaign_id", "campaignFilter"],
+        ["ad_id", "adFilter"],
+        ["start", "startDate"],
+        ["end", "endDate"],
+        ["target_action", "targetAction"],
+        ["trend_grain", "trendGrain"],
+      ]) {
+        const value = document.getElementById(id).value;
+        if (value) q.set(key, value);
+      }
+      return q;
+    }
+
+    async function getJSON(url, options) {
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+      return res.json();
+    }
+
+    async function loadOptions() {
+      const data = await getJSON("/api/accounts");
+      const account = document.getElementById("accountFilter");
+      account.innerHTML = `<option value="">전체 계정</option>` +
+        data.accounts.map(a => `<option value="${a.ad_account_id}">${escapeHtml(a.account_name)}</option>`).join("");
+      const campaign = document.getElementById("campaignFilter");
+      campaign.innerHTML = `<option value="">전체 캠페인</option>` +
+        data.campaigns.map(c => `<option value="${c.campaign_id}">${escapeHtml(c.campaign_name)}</option>`).join("");
+      applyInitialSelect("accountFilter", "account_id");
+      applyInitialSelect("campaignFilter", "campaign_id");
+      allAds = data.ads || [];
+      renderAdOptions();
+      applyInitialSelect("adFilter", "ad_id");
+    }
+
+    function renderAdOptions() {
+      const selectedCampaign = document.getElementById("campaignFilter").value;
+      const selectedAccount = document.getElementById("accountFilter").value;
+      const ad = document.getElementById("adFilter");
+      const current = ad.value;
+      const filtered = allAds.filter(a =>
+        (!selectedCampaign || a.campaign_id === selectedCampaign) &&
+        (!selectedAccount || a.ad_account_id === selectedAccount)
+      );
+      ad.innerHTML = `<option value="">전체 광고</option>` +
+        filtered.map(a => `<option value="${a.ad_id}">${escapeHtml(a.ad_name)}</option>`).join("");
+      if (filtered.some(a => a.ad_id === current)) ad.value = current;
+    }
+
+    async function refresh() {
+      hideError();
+      const q = params();
+      try {
+        const [summary, insights, alertData] = await Promise.all([
+          getJSON(`/api/summary?${q}`),
+          getJSON(`/api/insights?${q}`),
+          getJSON("/api/alerts"),
+        ]);
+        renderSummary(summary);
+        renderInsights(insights);
+        renderAlerts(alertData.alerts || []);
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    function renderSummary(s) {
+      const items = [
+        ["지출", `₩${money.format(s.spend || 0)}`, `${s.start} - ${s.end}`],
+        ["전환", number.format(s.conversions || 0), targetActionLabel()],
+        ["CPA", s.cpa ? `₩${money.format(s.cpa)}` : "-", "지출 / 전환"],
+        ["ROAS", s.purchase_roas ? `${number.format(s.purchase_roas)}x` : "-", "Meta 이벤트 기준"],
+        ["CTR", `${number.format(s.ctr || 0)}%`, `${compact.format(s.clicks || 0)} clicks`],
+        ["CPM", s.cpm ? `₩${money.format(s.cpm)}` : "-", `${compact.format(s.impressions || 0)} impressions`],
+        ["Frequency", number.format(s.frequency || 0), `${compact.format(s.reach || 0)} reach`],
+        ["동기화 오류", money.format(s.error_accounts || 0), `${s.account_count || 0} accounts`],
+      ];
+      document.getElementById("kpis").innerHTML = items.map(([label, value, sub]) => `
+        <article class="card kpi">
+          <div class="label">${label}</div>
+          <div class="value">${value}</div>
+          <div class="sub">${sub || ""}</div>
+        </article>
+      `).join("");
+      document.getElementById("syncStatus").textContent =
+        s.last_sync_at ? `마지막 동기화 ${s.last_sync_at}` : "동기화 이력 없음";
+      document.getElementById("statusDot").style.background = s.error_accounts > 0 ? "var(--accent-2)" : "var(--good)";
+    }
+
+    function renderInsights(data) {
+      renderTrend(data.trend || []);
+      renderPlatformTable(data.platforms || []);
+      renderTable("accountTable", data.accounts || []);
+      renderTable("campaignTable", data.campaigns || []);
+      renderTable("adsetTable", data.adsets || []);
+      renderTable("adTable", data.ads || []);
+    }
+
+    function renderTrend(rows) {
+      const grainLabel = {
+        daily: "일별",
+        weekly: "주별",
+        monthly: "월별",
+      }[document.getElementById("trendGrain").value] || "일별";
+      document.getElementById("trendMeta").textContent = rows.length ? `${grainLabel} · ${rows.length} points` : grainLabel;
+      const labels = rows.map(r => r.bucket);
+      const spend = rows.map(r => r.spend || 0);
+      const conversions = rows.map(r => r.conversions || 0);
+      if (trendChart) trendChart.destroy();
+      trendChart = new Chart(document.getElementById("trendChart"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Spend",
+              data: spend,
+              borderColor: "#087f8c",
+              backgroundColor: "rgba(8, 127, 140, .12)",
+              fill: true,
+              tension: .25,
+              yAxisID: "y",
+            },
+            {
+              label: targetActionLabel(),
+              data: conversions,
+              borderColor: "#b23a48",
+              backgroundColor: "rgba(178, 58, 72, .10)",
+              tension: .25,
+              yAxisID: "y1",
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { position: "bottom" } },
+          scales: {
+            x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+            y: { beginAtZero: true, ticks: { callback: value => compact.format(value) } },
+            y1: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false } }
+          }
+        }
+      });
+    }
+
+    function renderAlerts(rows) {
+      const target = document.getElementById("alerts");
+      if (!rows.length) {
+        target.innerHTML = `<div class="empty">현재 알림 없음</div>`;
+        return;
+      }
+      target.innerHTML = rows.map(a => `
+        <div class="alert ${a.severity === "critical" ? "critical" : ""}">
+          <div class="title">${escapeHtml(a.alert_type)} · ${escapeHtml(a.severity)}</div>
+          <div>${escapeHtml(a.message)}</div>
+          <div class="muted">${escapeHtml(a.ad_account_id)} · ${escapeHtml(a.level)} · ${number.format(a.metric_value || 0)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderPlatformTable(rows) {
+      const el = document.getElementById("platformTable");
+      if (!rows.length) {
+        el.innerHTML = `<div class="empty">플랫폼 breakdown 데이터 없음</div>`;
+        return;
+      }
+      el.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>플랫폼</th><th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th><th>지출</th><th>CPM</th><th>Frequency</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${escapeHtml(r.name || r.id || "")}</td>
+                <td>${money.format(r.impressions || 0)}</td>
+                <td>${money.format(r.clicks || 0)}</td>
+                <td>${number.format(r.ctr || 0)}%</td>
+                <td>${r.cpc ? `₩${money.format(r.cpc)}` : "-"}</td>
+                <td>₩${money.format(r.spend || 0)}</td>
+                <td>${r.cpm ? `₩${money.format(r.cpm)}` : "-"}</td>
+                <td>${number.format(r.frequency || 0)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderTable(id, rows) {
+      const el = document.getElementById(id);
+      if (!rows.length) {
+        el.innerHTML = `<div class="empty">데이터 없음</div>`;
+        return;
+      }
+      el.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>이름</th><th>지출</th><th>전환</th><th>CPA</th><th>ROAS</th><th>CTR</th><th>CPM</th><th>Frequency</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${escapeHtml(r.name || r.id || "")}</td>
+                <td>₩${money.format(r.spend || 0)}</td>
+                <td>${number.format(r.conversions || 0)}</td>
+                <td>${r.cpa ? `₩${money.format(r.cpa)}` : "-"}</td>
+                <td>${r.purchase_roas ? `${number.format(r.purchase_roas)}x` : "-"}</td>
+                <td>${number.format(r.ctr || 0)}%</td>
+                <td>${r.cpm ? `₩${money.format(r.cpm)}` : "-"}</td>
+                <td>${number.format(r.frequency || 0)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function manualSync() {
+      const button = document.getElementById("syncButton");
+      button.disabled = true;
+      hideError();
+      try {
+        const q = new URLSearchParams();
+        const account = document.getElementById("accountFilter").value;
+        if (account) q.set("account_id", account);
+        q.set("lookback_days", String(selectedLookbackDays()));
+        await getJSON(`/api/sync?${q}`, { method: "POST" });
+        await loadOptions();
+        await refresh();
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function showError(message) {
+      const box = document.getElementById("errorBox");
+      box.textContent = message;
+      box.style.display = "block";
+    }
+
+    function hideError() {
+      document.getElementById("errorBox").style.display = "none";
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      }[ch]));
+    }
+
+    function selectedLookbackDays() {
+      const start = new Date(document.getElementById("startDate").value);
+      const end = new Date(document.getElementById("endDate").value);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 7;
+      const diff = Math.floor((end - start) / 86400000) + 1;
+      return Math.max(1, Math.min(90, diff));
+    }
+
+    function bind() {
+      document.getElementById("startDate").value = todayISO(-6);
+      document.getElementById("endDate").value = todayISO(0);
+      applyInitialInput("startDate", "start");
+      applyInitialInput("endDate", "end");
+      applyInitialSelect("trendGrain", "trend_grain");
+      applyInitialSelect("targetAction", "target_action");
+      for (const id of ["accountFilter", "campaignFilter"]) {
+        document.getElementById(id).addEventListener("change", () => {
+          renderAdOptions();
+          refresh();
+        });
+      }
+      for (const id of ["adFilter", "startDate", "endDate", "trendGrain", "targetAction"]) {
+        document.getElementById(id).addEventListener("change", refresh);
+      }
+      document.getElementById("syncButton").addEventListener("click", manualSync);
+      document.getElementById("reloadButton").addEventListener("click", refresh);
+    }
+
+    function applyInitialInput(elementId, paramName) {
+      const value = initialUrlParams.get(paramName);
+      if (value) document.getElementById(elementId).value = value;
+    }
+
+    function applyInitialSelect(elementId, paramName) {
+      const value = initialUrlParams.get(paramName);
+      const el = document.getElementById(elementId);
+      if (value && [...el.options].some(option => option.value === value)) {
+        el.value = value;
+      }
+    }
+
+    function targetActionLabel() {
+      const select = document.getElementById("targetAction");
+      return select.options[select.selectedIndex]?.text || select.value;
+    }
+
+    bind();
+    loadOptions().then(refresh).then(() => lucide.createIcons()).catch(err => showError(err.message));
+  </script>
+</body>
+</html>

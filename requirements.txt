@@ -1,0 +1,18 @@
+# Core (minimal) — SQLite is stdlib (sqlite3)
+python-dotenv>=1.0.0
+Pillow>=10.0.0
+imagehash>=4.3.1
+anthropic>=0.69.0
+openai>=2.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+jinja2>=3.1.0
+
+# --- extras (install manually when you wire real vision-embedding clustering) ---
+# sentence-transformers>=3.0.0
+# scikit-learn>=1.4.0
+# hdbscan>=0.8.36
+# numpy>=1.26.0
+
+# --- dev ---
+pytest>=8.0.0

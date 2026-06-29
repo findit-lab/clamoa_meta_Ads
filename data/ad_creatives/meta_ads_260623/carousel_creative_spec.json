@@ -1,0 +1,26 @@
+{
+  "_note": "결제수단 추가 후 ads_create_ad(ad_account_id=160747383996921, ad_set_id=52586517381760, ad_name='clamoa_브랜드맞춤협찬_캐러셀_광고', creative=<아래 creative>)로 즉시 생성. 이미지 URL은 catbox 호스팅(2026-06-23).",
+  "ad_account_id": "160747383996921",
+  "ad_set_id": "52586517381760",
+  "campaign_id": "52586516986960",
+  "ad_name": "clamoa_브랜드맞춤협찬_캐러셀_광고",
+  "creative": {
+    "name": "clamoa_브랜드맞춤협찬_캐러셀_creative",
+    "object_story_spec": {
+      "page_id": "1178474898684007",
+      "link_data": {
+        "link": "https://clamoa.com",
+        "message": "단순 셀럽 협찬은 노출로 끝납니다. clamoa는 브랜드의 무드·타깃·결까지 분석해 우리 브랜드에 어울리는 셀럽만 매칭합니다. 지금 무료로 셀럽 추천을 받아보세요.",
+        "multi_share_optimized": false,
+        "multi_share_end_card": false,
+        "child_attachments": [
+          {"link": "https://clamoa.com", "picture": "https://files.catbox.moe/kbsvdw.png", "name": "아무 셀럽에게나 협찬하고 계신가요?", "description": "패션 브랜드 협찬 마케팅", "call_to_action": {"type": "LEARN_MORE", "value": {"link": "https://clamoa.com"}}},
+          {"link": "https://clamoa.com", "picture": "https://files.catbox.moe/vlby8k.png", "name": "유명하다고 다 어울리진 않습니다", "description": "노출만 남고 매출은 안 남습니다", "call_to_action": {"type": "LEARN_MORE", "value": {"link": "https://clamoa.com"}}},
+          {"link": "https://clamoa.com", "picture": "https://files.catbox.moe/ki003l.png", "name": "셀럽보다 중요한 건 ‘결’입니다", "description": "무드·타깃·가격대까지", "call_to_action": {"type": "LEARN_MORE", "value": {"link": "https://clamoa.com"}}},
+          {"link": "https://clamoa.com", "picture": "https://files.catbox.moe/vj7r0c.png", "name": "브랜드에 맞는 셀럽을 찾아냅니다", "description": "셀럽 데이터 기반 매칭", "call_to_action": {"type": "LEARN_MORE", "value": {"link": "https://clamoa.com"}}},
+          {"link": "https://clamoa.com", "picture": "https://files.catbox.moe/o3nzps.png", "name": "지금 무료로 셀럽 추천받으세요", "description": "clamoa 무료 상담", "call_to_action": {"type": "LEARN_MORE", "value": {"link": "https://clamoa.com"}}}
+        ]
+      }
+    }
+  }
+}

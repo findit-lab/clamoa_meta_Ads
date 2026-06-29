@@ -1,0 +1,13 @@
+# 경쟁사 목록 — 각 줄: url|name|category
+# url 은 다음 중 아무 형태나 가능:
+#   - FB 페이지 URL:  https://www.facebook.com/ZapierApp
+#   - 핸들:           ZapierApp  또는  @ZapierApp
+#   - 숫자 page_id:   1234567890
+#   - Ad Library URL: https://www.facebook.com/ads/library/?...&view_all_page_id=123
+# category 는 PR대행사 / 마케팅SaaS 등 자유 분류.
+#
+# 사용:  python scripts/add_target.py --bulk competitors.txt --purge-seed
+#
+# 아래는 예시 — 실제 Clamoa 경쟁사로 교체하세요.
+https://www.facebook.com/ZapierApp|Zapier|마케팅SaaS
+HubSpot|HubSpot|마케팅SaaS
