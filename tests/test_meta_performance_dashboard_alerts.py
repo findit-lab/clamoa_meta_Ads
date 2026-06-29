@@ -1,7 +1,9 @@
 import datetime as dt
 
 from adintel.performance import alerts, dashboard_data, store
+from adintel.performance.dashboard import _sync_response
 from adintel.performance.models import AdCreative
+from adintel.performance.models import SyncResult
 from adintel.performance.normalizer import normalize_breakdown_insight, normalize_insight
 
 
@@ -216,6 +218,58 @@ def test_dashboard_ads_include_creative_preview(conn):
     assert insights["ads"][0]["creative_id"] == "creative-1"
     assert insights["ads"][0]["thumbnail_url"] == "https://cdn.example/ad-1-full.jpg"
     assert insights["ads"][0]["effective_status"] == "ACTIVE"
+
+
+def test_sync_response_marks_expired_token():
+    response = _sync_response(
+        [
+            SyncResult(
+                ad_account_id="111",
+                status="failed",
+                rows_upserted=0,
+                started_at="",
+                finished_at="2026-06-29T00:00:00+00:00",
+                error=(
+                    'HTTP 400: {"error":{"message":"Error validating access token: '
+                    'Session has expired.","code":190,"error_subcode":463}}'
+                ),
+            )
+        ],
+        alerts_detected=0,
+        alerts_notified=0,
+    )
+    assert response["ok"] is False
+    assert response["needs_token_refresh"] is True
+    assert response["message"].startswith("Meta 액세스 토큰이 만료")
+    assert response["results"][0]["friendly_error"].startswith("Meta 액세스 토큰이 만료")
+
+
+def test_sync_failure_alert_uses_friendly_token_message(conn):
+    store.upsert_ad_account(conn, "111", "Account 111")
+    conn.execute(
+        """INSERT INTO meta_sync_runs
+             (ad_account_id, started_at, finished_at, status, lookback_days,
+              levels_json, rows_upserted, api_version, error)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "111",
+            "2026-06-25T00:00:00+00:00",
+            "2026-06-25T00:01:00+00:00",
+            "failed",
+            7,
+            "[]",
+            0,
+            "v25.0",
+            (
+                'HTTP 400: {"error":{"message":"Error validating access token: '
+                'Session has expired.","code":190,"error_subcode":463}}'
+            ),
+        ),
+    )
+    current = alerts.compute_current_alerts(conn, today=dt.date(2026, 6, 25))
+    sync_alert = next(a for a in current if a.alert_type == "sync_failure")
+    assert "Meta 액세스 토큰이 만료" in sync_alert.message
+    assert "HTTP 400" not in sync_alert.message
 
 
 def test_alerts_trigger_and_dedupe(conn):

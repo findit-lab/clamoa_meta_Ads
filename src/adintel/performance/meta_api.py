@@ -51,6 +51,29 @@ class MetaApiError(RuntimeError):
     pass
 
 
+def is_access_token_expired(error: str) -> bool:
+    text = str(error or "").lower()
+    return (
+        "session has expired" in text
+        or "error validating access token" in text
+        or '"code":190' in text
+        or "code 190" in text
+        or '"error_subcode":463' in text
+        or "subcode 463" in text
+    )
+
+
+def friendly_error_message(error: str) -> str:
+    if is_access_token_expired(error):
+        return (
+            "Meta 액세스 토큰이 만료되어 동기화할 수 없습니다. "
+            "Vercel의 META_ACCESS_TOKEN을 새 장기 토큰으로 교체한 뒤 다시 Sync를 눌러주세요."
+        )
+    if "META_ACCESS_TOKEN is required" in str(error or ""):
+        return "META_ACCESS_TOKEN 환경변수가 설정되어 있지 않습니다."
+    return str(error or "Meta API 요청에 실패했습니다.")
+
+
 def fields_for_level(level: str) -> list[str]:
     if level not in LEVEL_FIELDS:
         raise ValueError(f"unsupported insight level: {level}")

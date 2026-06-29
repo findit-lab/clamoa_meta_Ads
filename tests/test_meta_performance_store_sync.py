@@ -1,4 +1,5 @@
 from adintel.performance import store
+from adintel.performance.meta_api import friendly_error_message, is_access_token_expired
 from adintel.performance.models import AdCreative
 from adintel.performance.sync import sync_all_accounts
 
@@ -143,6 +144,16 @@ def test_sync_all_isolates_failed_accounts(conn):
     ).fetchone()
     assert failed["status"] == "failed"
     assert "permission error" in failed["error"]
+
+
+def test_meta_token_expiry_errors_are_user_friendly():
+    raw = (
+        'HTTP 400: {"error":{"message":"Error validating access token: '
+        'Session has expired on Sunday, 28-Jun-26 20:00:00 PDT.",'
+        '"type":"OAuthException","code":190,"error_subcode":463}}'
+    )
+    assert is_access_token_expired(raw)
+    assert friendly_error_message(raw).startswith("Meta 액세스 토큰이 만료")
 
 
 def test_upsert_ad_creatives_replaces_preview(conn):

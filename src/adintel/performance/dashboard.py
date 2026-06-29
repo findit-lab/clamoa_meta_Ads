@@ -11,7 +11,9 @@ from fastapi.templating import Jinja2Templates
 import config
 from adintel import db
 from . import alerts, dashboard_data
-from .meta_api import MetaInsightsClient
+from .meta_api import MetaApiError, MetaInsightsClient, friendly_error_message, is_access_token_expired
+from .models import SyncResult
+from . import store
 from .sync import DEFAULT_LEVELS, ensure_account_for_sync, sync_account, sync_all_accounts
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -111,31 +113,91 @@ def api_sync(
     db.init_db()
     conn = db.connect()
     try:
-        client = MetaInsightsClient()
+        try:
+            client = MetaInsightsClient()
+        except MetaApiError as e:
+            return _sync_response(
+                [
+                    SyncResult(
+                        ad_account_id=account_id or "",
+                        status="failed",
+                        rows_upserted=0,
+                        started_at="",
+                        finished_at=store.now_iso(),
+                        error=str(e),
+                    )
+                ],
+                alerts_detected=0,
+                alerts_notified=0,
+            )
         if account_id:
             account = ensure_account_for_sync(conn, account_id)
-            results = [
-                sync_account(
-                    conn,
-                    client,
-                    account,
-                    lookback_days=lookback_days,
-                    levels=DEFAULT_LEVELS,
-                )
-            ]
+            try:
+                results = [
+                    sync_account(
+                        conn,
+                        client,
+                        account,
+                        lookback_days=lookback_days,
+                        levels=DEFAULT_LEVELS,
+                    )
+                ]
+            except Exception as e:
+                results = [
+                    SyncResult(
+                        ad_account_id=account.ad_account_id,
+                        status="failed",
+                        rows_upserted=0,
+                        started_at="",
+                        finished_at=store.now_iso(),
+                        error=str(e),
+                    )
+                ]
         else:
             results = sync_all_accounts(conn, client, lookback_days=lookback_days)
         current_alerts = alerts.compute_current_alerts(conn)
         notified = alerts.notify_slack(conn, current_alerts)
-        return {
-            "results": [r.__dict__ for r in results],
-            "alerts_detected": len(current_alerts),
-            "alerts_notified": notified,
-        }
+        return _sync_response(
+            results,
+            alerts_detected=len(current_alerts),
+            alerts_notified=notified,
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=friendly_error_message(str(e))) from e
     finally:
         conn.close()
+
+
+def _sync_response(
+    results: list[SyncResult],
+    alerts_detected: int,
+    alerts_notified: int,
+) -> dict:
+    failed = [r for r in results if r.status != "success"]
+    token_expired = any(is_access_token_expired(r.error) for r in failed)
+    message = ""
+    if failed:
+        if token_expired:
+            message = friendly_error_message(failed[0].error)
+        else:
+            message = "일부 계정 동기화에 실패했습니다: " + "; ".join(
+                f"{r.ad_account_id or 'unknown'} - {friendly_error_message(r.error)}"
+                for r in failed
+            )
+    return {
+        "ok": not failed,
+        "needs_token_refresh": token_expired,
+        "message": message,
+        "results": [
+            {
+                **r.__dict__,
+                "friendly_error": friendly_error_message(r.error) if r.error else "",
+            }
+            for r in results
+        ],
+        "alerts_detected": alerts_detected,
+        "alerts_notified": alerts_notified,
+    }
 
 
 def _range(start: str | None, end: str | None) -> tuple[str, str]:

@@ -519,7 +519,7 @@
       const res = await fetch(url, options);
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(text || res.statusText);
+        throw new Error(errorMessageFromResponse(text, res.statusText));
       }
       return res.json();
     }
@@ -567,7 +567,7 @@
         renderInsights(insights);
         renderAlerts(alertData.alerts || []);
       } catch (err) {
-        showError(err.message);
+        showError(friendlyClientError(err.message));
       }
     }
 
@@ -820,11 +820,14 @@
         const account = document.getElementById("accountFilter").value;
         if (account) q.set("account_id", account);
         q.set("lookback_days", String(selectedLookbackDays()));
-        await getJSON(`/api/sync?${q}`, { method: "POST" });
+        const result = await getJSON(`/api/sync?${q}`, { method: "POST" });
         await loadOptions();
         await refresh();
+        if (result && result.ok === false) {
+          showError(syncResultMessage(result));
+        }
       } catch (err) {
-        showError(err.message);
+        showError(friendlyClientError(err.message));
       } finally {
         button.disabled = false;
       }
@@ -834,6 +837,39 @@
       const box = document.getElementById("errorBox");
       box.textContent = message;
       box.style.display = "block";
+    }
+
+    function errorMessageFromResponse(text, fallback) {
+      if (!text) return fallback || "요청에 실패했습니다.";
+      try {
+        const payload = JSON.parse(text);
+        if (payload.detail) return String(payload.detail);
+        if (payload.message) return String(payload.message);
+        if (payload.error) return String(payload.error);
+      } catch (err) {
+        return text;
+      }
+      return text;
+    }
+
+    function syncResultMessage(result) {
+      if (result.message) return result.message;
+      const failed = (result.results || []).filter(r => r.status !== "success");
+      if (!failed.length) return "동기화 요청을 처리했습니다.";
+      return failed.map(r => r.friendly_error || r.error || `${r.ad_account_id} 동기화 실패`).join(" / ");
+    }
+
+    function friendlyClientError(message) {
+      const text = String(message || "");
+      if (
+        text.includes("Session has expired") ||
+        text.includes("Error validating access token") ||
+        text.includes("code\\\":190") ||
+        text.includes("error_subcode\\\":463")
+      ) {
+        return "Meta 액세스 토큰이 만료되어 동기화할 수 없습니다. Vercel의 META_ACCESS_TOKEN을 새 장기 토큰으로 교체한 뒤 다시 Sync를 눌러주세요.";
+      }
+      return text;
     }
 
     function hideError() {

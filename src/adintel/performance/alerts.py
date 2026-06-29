@@ -8,6 +8,7 @@ import statistics
 import urllib.request
 
 import config
+from .meta_api import friendly_error_message
 from .models import Alert
 from . import store
 
@@ -164,7 +165,7 @@ def _sync_failure_alerts(
             continue
         message = f"{row['ad_account_id']}: latest Meta sync failed"
         if row["error"]:
-            message += f" ({row['error'][:160]})"
+            message += f" ({friendly_error_message(row['error'])})"
         alerts.append(
             Alert(
                 fingerprint=f"sync_failure:{row['ad_account_id']}:{today_s}",
@@ -254,4 +255,3 @@ def notify_slack(conn: sqlite3.Connection, alerts: list[Alert]) -> int:
     store.mark_alerts_sent(conn, [a.fingerprint for a in new_alerts])
     conn.commit()
     return len(new_alerts)
-
