@@ -361,7 +361,11 @@ class PostgresConnection:
                 "Postgres DATABASE_URL is configured but psycopg is not installed. "
                 "Run `pip install -r requirements.txt`."
             )
-        self._conn = psycopg.connect(database_url, connect_timeout=10)
+        self._conn = psycopg.connect(
+            database_url,
+            connect_timeout=10,
+            prepare_threshold=None,
+        )
 
     def execute(self, sql: str, params: Sequence[Any] | None = None) -> PostgresCursor:
         cursor = self._conn.execute(_postgres_sql(sql), params or ())
