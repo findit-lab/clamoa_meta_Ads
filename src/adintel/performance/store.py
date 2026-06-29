@@ -8,7 +8,7 @@ from typing import Iterable
 
 import config
 from adintel import db as db_module
-from .models import AdAccount, Alert, InsightBreakdownRow, InsightRow
+from .models import AdAccount, AdCreative, Alert, InsightBreakdownRow, InsightRow
 from .normalizer import normalize_account_id
 
 
@@ -342,6 +342,39 @@ def _breakdown_tuple(r: InsightBreakdownRow) -> tuple:
         r.actions_json,
         r.action_values_json,
         r.cost_per_action_type_json,
+        r.raw_json,
+        r.synced_at,
+    )
+
+
+def upsert_ad_creatives(conn: sqlite3.Connection, rows: list[AdCreative]) -> int:
+    if not rows:
+        return 0
+    conn.executemany(
+        """INSERT INTO meta_ad_creatives
+             (ad_account_id, ad_id, creative_id, thumbnail_url, image_url,
+              effective_status, raw_json, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(ad_account_id, ad_id) DO UPDATE SET
+              creative_id=excluded.creative_id,
+              thumbnail_url=excluded.thumbnail_url,
+              image_url=excluded.image_url,
+              effective_status=excluded.effective_status,
+              raw_json=excluded.raw_json,
+              synced_at=excluded.synced_at""",
+        [_ad_creative_tuple(r) for r in rows],
+    )
+    return len(rows)
+
+
+def _ad_creative_tuple(r: AdCreative) -> tuple:
+    return (
+        r.ad_account_id,
+        r.ad_id,
+        r.creative_id,
+        r.thumbnail_url,
+        r.image_url,
+        r.effective_status,
         r.raw_json,
         r.synced_at,
     )

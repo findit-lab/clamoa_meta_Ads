@@ -1,6 +1,7 @@
 import datetime as dt
 
 from adintel.performance import alerts, dashboard_data, store
+from adintel.performance.models import AdCreative
 from adintel.performance.normalizer import normalize_breakdown_insight, normalize_insight
 
 
@@ -185,6 +186,36 @@ def test_dashboard_summary_and_rankings(conn):
     )
     assert weekly[0]["bucket"].startswith("2026-W")
     assert monthly[0]["bucket"] == "2026-06"
+
+
+def test_dashboard_ads_include_creative_preview(conn):
+    store.upsert_ad_account(conn, "111", "Account 111")
+    _insert_campaign(conn)
+    store.upsert_ad_creatives(
+        conn,
+        [
+            AdCreative(
+                ad_account_id="111",
+                ad_id="ad-1",
+                creative_id="creative-1",
+                thumbnail_url="",
+                image_url="https://cdn.example/ad-1-full.jpg",
+                effective_status="ACTIVE",
+                raw_json="{}",
+                synced_at="2026-06-25T00:00:00+00:00",
+            )
+        ],
+    )
+
+    insights = dashboard_data.get_insights(
+        conn,
+        start="2026-06-25",
+        end="2026-06-25",
+        target_action="purchase",
+    )
+    assert insights["ads"][0]["creative_id"] == "creative-1"
+    assert insights["ads"][0]["thumbnail_url"] == "https://cdn.example/ad-1-full.jpg"
+    assert insights["ads"][0]["effective_status"] == "ACTIVE"
 
 
 def test_alerts_trigger_and_dedupe(conn):

@@ -163,6 +163,15 @@ def get_insights(
     for account in account_groups:
         account["name"] = account_names.get(account["id"], account["name"])
 
+    ad_groups = _group_rows(
+        ad_rows,
+        key_field="ad_id",
+        label_field="ad_name",
+        target_action=target_action,
+        limit=25,
+    )
+    _attach_creatives(conn, ad_groups)
+
     return {
         "accounts": account_groups,
         "campaigns": _group_rows(
@@ -179,13 +188,7 @@ def get_insights(
             target_action=target_action,
             limit=25,
         ),
-        "ads": _group_rows(
-            ad_rows,
-            key_field="ad_id",
-            label_field="ad_name",
-            target_action=target_action,
-            limit=25,
-        ),
+        "ads": ad_groups,
         "platforms": get_platform_breakdown(
             conn,
             start=start,
@@ -446,6 +449,49 @@ def _group_rows(
         out.append({k: v for k, v in group.items() if k != "rows"} | metrics)
     out.sort(key=lambda r: (r["spend"], r["conversions"]), reverse=True)
     return out[:limit]
+
+
+def _attach_creatives(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    ad_ids = sorted({str(row.get("id") or "") for row in rows if row.get("id")})
+    if not ad_ids:
+        return
+    placeholders = ",".join("?" for _ in ad_ids)
+    creative_rows = conn.execute(
+        f"""SELECT ad_account_id, ad_id, creative_id, thumbnail_url, image_url,
+                   effective_status
+            FROM meta_ad_creatives
+            WHERE ad_id IN ({placeholders})""",
+        ad_ids,
+    ).fetchall()
+    by_account_ad = {
+        (r["ad_account_id"], r["ad_id"]): r
+        for r in creative_rows
+    }
+    by_ad: dict[str, sqlite3.Row] = {}
+    for r in creative_rows:
+        by_ad.setdefault(r["ad_id"], r)
+    for row in rows:
+        creative = by_account_ad.get((row.get("ad_account_id"), row.get("id"))) or by_ad.get(row.get("id"))
+        if not creative:
+            row.update(
+                {
+                    "creative_id": "",
+                    "thumbnail_url": "",
+                    "image_url": "",
+                    "effective_status": "",
+                }
+            )
+            continue
+        row.update(
+            {
+                "creative_id": creative["creative_id"] or "",
+                "thumbnail_url": creative["thumbnail_url"] or creative["image_url"] or "",
+                "image_url": creative["image_url"] or "",
+                "effective_status": creative["effective_status"] or "",
+            }
+        )
 
 
 def _trend_row(row: sqlite3.Row) -> dict[str, Any]:

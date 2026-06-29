@@ -210,6 +210,21 @@ ON meta_insight_breakdowns(ad_account_id, publisher_platform, date_start);
 CREATE INDEX IF NOT EXISTS idx_meta_breakdowns_campaign
 ON meta_insight_breakdowns(ad_account_id, campaign_id, date_start);
 
+-- Meta Ads 운영 광고 소재 미리보기 메타데이터.
+CREATE TABLE IF NOT EXISTS meta_ad_creatives (
+    ad_account_id    TEXT NOT NULL,
+    ad_id            TEXT NOT NULL,
+    creative_id      TEXT DEFAULT '',
+    thumbnail_url    TEXT DEFAULT '',
+    image_url        TEXT DEFAULT '',
+    effective_status TEXT DEFAULT '',
+    raw_json         TEXT DEFAULT '{}',
+    synced_at        TEXT NOT NULL,
+    PRIMARY KEY (ad_account_id, ad_id)
+);
+CREATE INDEX IF NOT EXISTS idx_meta_ad_creatives_status
+ON meta_ad_creatives(ad_account_id, effective_status);
+
 -- 당일 누적값 스냅샷. 15-30분 단위 추이 표시용.
 CREATE TABLE IF NOT EXISTS meta_insight_snapshots (
     snapshot_id       INTEGER PRIMARY KEY AUTOINCREMENT,

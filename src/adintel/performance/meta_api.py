@@ -9,6 +9,7 @@ import urllib.request
 from typing import Any
 
 import config
+from .models import AdCreative
 from .normalizer import normalize_account_id
 
 
@@ -101,6 +102,47 @@ class MetaInsightsClient:
             rows.extend(payload.get("data") or [])
             url = (payload.get("paging") or {}).get("next")
         return rows
+
+    def fetch_ad_creatives(
+        self,
+        ad_account_id: str,
+        ad_ids: list[str],
+        synced_at: str = "",
+        chunk_size: int = 50,
+    ) -> list[AdCreative]:
+        account_id = normalize_account_id(ad_account_id)
+        unique_ids = sorted({str(ad_id).strip() for ad_id in ad_ids if str(ad_id).strip()})
+        previews: list[AdCreative] = []
+        for i in range(0, len(unique_ids), max(1, chunk_size)):
+            chunk = unique_ids[i : i + chunk_size]
+            params = {
+                "access_token": self.access_token,
+                "ids": ",".join(chunk),
+                "fields": "effective_status,creative{id,thumbnail_url,image_url}",
+            }
+            url = (
+                f"https://graph.facebook.com/{self.api_version}/?"
+                + urllib.parse.urlencode(params)
+            )
+            payload = self._get_json(url)
+            for ad_id in chunk:
+                raw = payload.get(ad_id)
+                if not isinstance(raw, dict):
+                    continue
+                creative = raw.get("creative") if isinstance(raw.get("creative"), dict) else {}
+                previews.append(
+                    AdCreative(
+                        ad_account_id=account_id,
+                        ad_id=ad_id,
+                        creative_id=str(creative.get("id") or ""),
+                        thumbnail_url=str(creative.get("thumbnail_url") or ""),
+                        image_url=str(creative.get("image_url") or ""),
+                        effective_status=str(raw.get("effective_status") or ""),
+                        raw_json=json.dumps(raw, ensure_ascii=False, sort_keys=True),
+                        synced_at=synced_at,
+                    )
+                )
+        return previews
 
     def _get_json(self, url: str) -> dict[str, Any]:
         last_error = ""

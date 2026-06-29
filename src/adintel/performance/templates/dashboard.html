@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Meta Ads Monitor</title>
+  <link rel="icon" href="data:,">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
   <style>
@@ -127,6 +128,51 @@
       border-radius: 8px;
       box-shadow: var(--shadow);
     }
+    .dashboard-description {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .description-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .description-head h2 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+    .description-copy {
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .description-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .description-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
     .kpi {
       min-height: 96px;
       padding: 13px;
@@ -236,6 +282,58 @@
       font-size: 12px;
       z-index: 1;
     }
+    .ad-table th:first-child,
+    .ad-table td:first-child {
+      min-width: 320px;
+    }
+    .ad-cell {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      min-height: 58px;
+    }
+    .creative-thumb {
+      position: relative;
+      width: 52px;
+      height: 52px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface-soft);
+      flex: 0 0 auto;
+    }
+    .creative-thumb img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .creative-thumb.missing::after,
+    .creative-thumb:empty::after {
+      content: "IMG";
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .ad-name {
+      min-width: 0;
+      font-weight: 700;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .ad-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
     .empty {
       padding: 28px 12px;
       color: var(--muted);
@@ -264,6 +362,15 @@
       .filters, .kpis { grid-template-columns: 1fr 1fr; }
       .filters button { min-width: 0; }
       .chart-wrap { height: 270px; }
+      .description-head { align-items: flex-start; flex-direction: column; }
+      .ad-cell {
+        grid-template-columns: 44px minmax(0, 1fr);
+        min-height: 50px;
+      }
+      .creative-thumb {
+        width: 44px;
+        height: 44px;
+      }
     }
     @media (max-width: 460px) {
       .filters, .kpis { grid-template-columns: 1fr; }
@@ -319,6 +426,15 @@
         <i data-lucide="refresh-cw" size="17"></i>
         Sync
       </button>
+    </section>
+
+    <section class="dashboard-description" id="dashboardDescription">
+      <div class="description-head">
+        <h2>대시보드 요약</h2>
+        <span class="muted" id="descriptionMeta"></span>
+      </div>
+      <p class="description-copy" id="descriptionCopy">데이터를 불러오는 중입니다.</p>
+      <div class="description-metrics" id="descriptionMetrics"></div>
     </section>
 
     <section class="kpis" id="kpis"></section>
@@ -446,12 +562,46 @@
           getJSON(`/api/insights?${q}`),
           getJSON("/api/alerts"),
         ]);
+        renderDescription(summary, insights, alertData.alerts || []);
         renderSummary(summary);
         renderInsights(insights);
         renderAlerts(alertData.alerts || []);
       } catch (err) {
         showError(err.message);
       }
+    }
+
+    function renderDescription(summary, insights, alerts) {
+      const ads = insights.ads || [];
+      const topSpend = ads[0];
+      const topConversion = [...ads].sort((a, b) => (b.conversions || 0) - (a.conversions || 0))[0];
+      const conversionLabel = targetActionLabel();
+      const cpa = summary.cpa ? `₩${money.format(summary.cpa)}` : "-";
+      const roas = summary.purchase_roas ? `${number.format(summary.purchase_roas)}x` : "-";
+      const alertCount = alerts.length;
+      const alertText = alertCount
+        ? `현재 확인할 이상 징후가 ${money.format(alertCount)}건 있습니다.`
+        : "현재 확인할 이상 징후는 없습니다.";
+      const spendLeader = topSpend
+        ? `가장 많은 예산은 '${topSpend.name || topSpend.id}' 광고에 집중되어 있습니다.`
+        : "광고별 성과 데이터는 아직 없습니다.";
+      const conversionLeader = topConversion && (topConversion.conversions || 0) > 0
+        ? `전환은 '${topConversion.name || topConversion.id}' 광고가 가장 많이 만들고 있습니다.`
+        : `${conversionLabel} 전환은 아직 잡히지 않았습니다.`;
+      document.getElementById("descriptionMeta").textContent =
+        summary.last_sync_at ? `마지막 동기화 ${summary.last_sync_at}` : "동기화 이력 없음";
+      document.getElementById("descriptionCopy").textContent =
+        `${summary.start}부터 ${summary.end}까지 지출은 ₩${money.format(summary.spend || 0)}, ` +
+        `${conversionLabel} 전환은 ${number.format(summary.conversions || 0)}건입니다. ` +
+        `CPA는 ${cpa}, ROAS는 ${roas}, CTR은 ${number.format(summary.ctr || 0)}%입니다. ` +
+        `${spendLeader} ${conversionLeader} ${alertText}`;
+      document.getElementById("descriptionMetrics").innerHTML = [
+        ["지출", `₩${money.format(summary.spend || 0)}`],
+        [conversionLabel, number.format(summary.conversions || 0)],
+        ["CPA", cpa],
+        ["ROAS", roas],
+        ["알림", `${money.format(alertCount)}건`],
+      ].map(([label, value]) => `<span class="description-chip">${escapeHtml(label)} ${escapeHtml(value)}</span>`).join("");
     }
 
     function renderSummary(s) {
@@ -483,7 +633,7 @@
       renderTable("accountTable", data.accounts || []);
       renderTable("campaignTable", data.campaigns || []);
       renderTable("adsetTable", data.adsets || []);
-      renderTable("adTable", data.ads || []);
+      renderAdTable("adTable", data.ads || []);
     }
 
     function renderTrend(rows) {
@@ -609,6 +759,55 @@
             `).join("")}
           </tbody>
         </table>
+      `;
+    }
+
+    function renderAdTable(id, rows) {
+      const el = document.getElementById(id);
+      if (!rows.length) {
+        el.innerHTML = `<div class="empty">데이터 없음</div>`;
+        return;
+      }
+      el.innerHTML = `
+        <table class="ad-table">
+          <thead>
+            <tr>
+              <th>광고</th><th>지출</th><th>전환</th><th>CPA</th><th>ROAS</th><th>CTR</th><th>CPM</th><th>Frequency</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${renderAdCell(r)}</td>
+                <td>₩${money.format(r.spend || 0)}</td>
+                <td>${number.format(r.conversions || 0)}</td>
+                <td>${r.cpa ? `₩${money.format(r.cpa)}` : "-"}</td>
+                <td>${r.purchase_roas ? `${number.format(r.purchase_roas)}x` : "-"}</td>
+                <td>${number.format(r.ctr || 0)}%</td>
+                <td>${r.cpm ? `₩${money.format(r.cpm)}` : "-"}</td>
+                <td>${number.format(r.frequency || 0)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderAdCell(row) {
+      const imageUrl = row.thumbnail_url || row.image_url || "";
+      const status = row.effective_status ? ` · ${row.effective_status}` : "";
+      const meta = `${row.id || ""}${status}`;
+      const img = imageUrl
+        ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(row.name || row.id || "ad creative")}" loading="lazy" onerror="this.parentElement.classList.add('missing'); this.remove();">`
+        : "";
+      return `
+        <div class="ad-cell">
+          <div class="creative-thumb ${imageUrl ? "" : "missing"}">${img}</div>
+          <div>
+            <div class="ad-name">${escapeHtml(row.name || row.id || "")}</div>
+            <div class="ad-meta">${escapeHtml(meta)}</div>
+          </div>
+        </div>
       `;
     }
 

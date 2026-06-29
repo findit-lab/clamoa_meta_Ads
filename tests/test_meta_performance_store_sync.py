@@ -1,4 +1,5 @@
 from adintel.performance import store
+from adintel.performance.models import AdCreative
 from adintel.performance.sync import sync_all_accounts
 
 
@@ -72,6 +73,21 @@ class FakeClient:
             ]
         return [base]
 
+    def fetch_ad_creatives(self, ad_account_id, ad_ids, synced_at="", chunk_size=50):
+        return [
+            AdCreative(
+                ad_account_id=ad_account_id,
+                ad_id=ad_id,
+                creative_id=f"creative-{ad_id}",
+                thumbnail_url=f"https://cdn.example/{ad_id}.jpg",
+                image_url=f"https://cdn.example/{ad_id}-full.jpg",
+                effective_status="ACTIVE",
+                raw_json="{}",
+                synced_at=synced_at,
+            )
+            for ad_id in ad_ids
+        ]
+
 
 def test_meta_insights_are_scoped_by_account_and_upserted(conn):
     store.upsert_ad_account(conn, "111", "A")
@@ -127,3 +143,50 @@ def test_sync_all_isolates_failed_accounts(conn):
     ).fetchone()
     assert failed["status"] == "failed"
     assert "permission error" in failed["error"]
+
+
+def test_upsert_ad_creatives_replaces_preview(conn):
+    first = AdCreative(
+        ad_account_id="111",
+        ad_id="ad-1",
+        creative_id="creative-1",
+        thumbnail_url="https://cdn.example/old.jpg",
+        image_url="https://cdn.example/old-full.jpg",
+        effective_status="ACTIVE",
+        raw_json="{}",
+        synced_at="2026-06-25T00:00:00+00:00",
+    )
+    second = AdCreative(
+        ad_account_id="111",
+        ad_id="ad-1",
+        creative_id="creative-2",
+        thumbnail_url="",
+        image_url="https://cdn.example/new-full.jpg",
+        effective_status="PAUSED",
+        raw_json="{}",
+        synced_at="2026-06-26T00:00:00+00:00",
+    )
+    assert store.upsert_ad_creatives(conn, [first]) == 1
+    assert store.upsert_ad_creatives(conn, [second]) == 1
+
+    row = conn.execute("SELECT * FROM meta_ad_creatives WHERE ad_id='ad-1'").fetchone()
+    assert row["creative_id"] == "creative-2"
+    assert row["thumbnail_url"] == ""
+    assert row["image_url"] == "https://cdn.example/new-full.jpg"
+    assert row["effective_status"] == "PAUSED"
+
+
+def test_ad_level_sync_stores_creative_preview(conn):
+    store.upsert_ad_account(conn, "111", "A")
+    conn.commit()
+
+    results = sync_all_accounts(
+        conn,
+        FakeClient(),
+        lookback_days=1,
+        levels=("ad",),
+    )
+    assert results[0].status == "success"
+    row = conn.execute("SELECT * FROM meta_ad_creatives WHERE ad_id='ad-1'").fetchone()
+    assert row["creative_id"] == "creative-ad-1"
+    assert row["thumbnail_url"] == "https://cdn.example/ad-1.jpg"

@@ -43,6 +43,7 @@ def sync_account(
     since, until = date_window(lookback_days, today=today)
     rows = []
     breakdown_rows = []
+    ad_ids: set[str] = set()
     try:
         for level in levels:
             raw_rows = client.fetch_insights(
@@ -63,6 +64,8 @@ def sync_account(
                 )
                 for raw in raw_rows
             )
+            if level == "ad":
+                ad_ids.update(str(raw.get("ad_id") or "").strip() for raw in raw_rows)
             if breakdowns:
                 raw_breakdown_rows = client.fetch_insights(
                     account.ad_account_id,
@@ -85,6 +88,7 @@ def sync_account(
                 )
         inserted = store.upsert_insight_rows(conn, rows, captured_at=started_at)
         inserted += store.upsert_breakdown_rows(conn, breakdown_rows)
+        inserted += _sync_ad_creatives(conn, client, account, ad_ids, started_at)
         finished_at = store.record_sync_finish(
             conn, run_id, "success", rows_upserted=inserted
         )
@@ -160,3 +164,22 @@ def ensure_account_for_sync(
     created = store.get_ad_account(conn, account_id)
     assert created is not None
     return created
+
+
+def _sync_ad_creatives(
+    conn: sqlite3.Connection,
+    client: MetaInsightsClient,
+    account: AdAccount,
+    ad_ids: set[str],
+    synced_at: str,
+) -> int:
+    fetch = getattr(client, "fetch_ad_creatives", None)
+    clean_ids = sorted(ad_id for ad_id in ad_ids if ad_id)
+    if not clean_ids or fetch is None:
+        return 0
+    try:
+        previews = fetch(account.ad_account_id, clean_ids, synced_at=synced_at)
+    except Exception as e:
+        print(f"[creative-sync] skipped {account.ad_account_id}: {e}")
+        return 0
+    return store.upsert_ad_creatives(conn, previews)

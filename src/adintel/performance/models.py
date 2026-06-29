@@ -56,6 +56,18 @@ class InsightBreakdownRow(InsightRow):
 
 
 @dataclass(frozen=True)
+class AdCreative:
+    ad_account_id: str
+    ad_id: str
+    creative_id: str = ""
+    thumbnail_url: str = ""
+    image_url: str = ""
+    effective_status: str = ""
+    raw_json: str = "{}"
+    synced_at: str = ""
+
+
+@dataclass(frozen=True)
 class SyncResult:
     ad_account_id: str
     status: str
