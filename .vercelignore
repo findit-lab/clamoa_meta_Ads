@@ -1,0 +1,13 @@
+.env
+.env.*
+.venv/
+.pytest_cache/
+.git/
+__pycache__/
+*.pyc
+tests/
+data/ad_creatives/
+data/generated/
+data/media/
+data/*.db
+data/*.db-*

@@ -82,6 +82,9 @@ DISAPPEAR_GRACE_RUNS = int(os.getenv("ADINTEL_DISAPPEAR_GRACE_RUNS", "2"))
 
 def ensure_dirs() -> None:
     """런타임 디렉터리 보장."""
+    if os.getenv("VERCEL"):
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        return
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
     MOCK_DIR.mkdir(parents=True, exist_ok=True)
