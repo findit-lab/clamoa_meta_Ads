@@ -10,7 +10,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-if os.getenv("VERCEL"):
+if os.getenv("VERCEL") and not (
+    os.getenv("ADINTEL_DATABASE_URL")
+    or os.getenv("SUPABASE_DATABASE_URL")
+    or os.getenv("DATABASE_URL")
+):
     os.environ.setdefault("ADINTEL_DB_PATH", "/tmp/adintel.db")
 
 from adintel import db  # noqa: E402

@@ -84,6 +84,26 @@ python3 scripts/serve_dashboard.py
 - `meta_sync_runs`: 계정별 동기화 성공/실패 이력.
 - `meta_alert_events`: Slack 중복 알림 방지 ledger.
 
+### Vercel + Supabase 운영 DB
+
+로컬 기본값은 SQLite지만, Vercel에서는 Supabase Postgres 연결 문자열을 env로 넣으면
+영구 DB를 사용한다.
+
+필수 Vercel env:
+- `DATABASE_URL` 또는 `SUPABASE_DATABASE_URL`: Supabase Project Settings → Database → Connection string. Vercel 서버리스에서는 pooler URL 권장.
+- `META_ACCESS_TOKEN`: Meta Marketing API 토큰.
+- `META_AD_ACCOUNTS`: 서버리스 첫 기동 시 계정 레지스트리 시드. 예:
+  `1700079570882719|clamoa|KRW|Asia/Seoul|landing_click`
+
+배포 후 최초 1회:
+
+```bash
+curl -X POST "https://<vercel-url>/api/sync?lookback_days=5"
+```
+
+`DATABASE_URL`이 없으면 Vercel은 `/tmp/adintel.db` 임시 SQLite로 fallback하므로,
+재배포/콜드스타트 때 데이터가 비어 보일 수 있다.
+
 ## 범위 밖 (이번 스캐폴드 제외)
 
 실 GCP 배포(Cloud Run/BigQuery/GCS), 실 Apify 수집 검증, CAPI 루프(자체 광고 성과↔longevity 상관) — 기획서 Phase 4+.

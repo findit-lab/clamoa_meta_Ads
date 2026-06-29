@@ -1,15 +1,21 @@
-"""SQLite 스키마 + 커넥션. 기획서 v2 §5 SQL을 SQLite DDL로 이식.
+"""Database schema + connection helpers.
 
 - ad_events: append-only 이벤트 스토어 (★핵심①)
 - ads: 이벤트에서 materialize 되는 상태 테이블
-- JSON 컬럼(visual_flags)은 TEXT로 저장.
+- 로컬 기본값은 SQLite, 운영에서는 Supabase/Postgres DATABASE_URL을 지원.
 """
 from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 import config
+
+try:
+    import psycopg
+except ImportError:  # pragma: no cover - exercised only when Postgres is configured.
+    psycopg = None  # type: ignore[assignment]
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -285,10 +291,125 @@ CREATE INDEX IF NOT EXISTS idx_creative_jobs_ad ON creative_jobs(ad_archive_id);
 CREATE INDEX IF NOT EXISTS idx_creative_jobs_status ON creative_jobs(status);
 """
 
+POSTGRES_SCHEMA = (
+    SCHEMA.replace("PRAGMA journal_mode=WAL;", "")
+    .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
+    .replace("REAL", "DOUBLE PRECISION")
+)
+
+
+class DbRow(Mapping[str, Any]):
+    """Small row object compatible with sqlite3.Row's common access patterns."""
+
+    def __init__(self, columns: Sequence[str], values: Sequence[Any]):
+        self._columns = tuple(columns)
+        self._values = tuple(values)
+        self._by_name = dict(zip(self._columns, self._values))
+
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            return self._values[key]
+        return self._by_name[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._columns)
+
+    def __len__(self) -> int:
+        return len(self._columns)
+
+    def keys(self):  # sqlite3.Row compatibility.
+        return self._by_name.keys()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._by_name.get(key, default)
+
+
+class PostgresCursor:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    @property
+    def rowcount(self) -> int:
+        return self._cursor.rowcount
+
+    @property
+    def lastrowid(self) -> None:
+        return None
+
+    def fetchone(self) -> DbRow | None:
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        return self._row(row)
+
+    def fetchall(self) -> list[DbRow]:
+        return [self._row(row) for row in self._cursor.fetchall()]
+
+    def _row(self, row: Sequence[Any]) -> DbRow:
+        columns = [col.name for col in self._cursor.description or []]
+        return DbRow(columns, row)
+
+
+class PostgresConnection:
+    """Tiny adapter that lets existing sqlite-style code talk to Postgres."""
+
+    dialect = "postgres"
+
+    def __init__(self, database_url: str):
+        if psycopg is None:
+            raise RuntimeError(
+                "Postgres DATABASE_URL is configured but psycopg is not installed. "
+                "Run `pip install -r requirements.txt`."
+            )
+        self._conn = psycopg.connect(database_url, connect_timeout=10)
+
+    def execute(self, sql: str, params: Sequence[Any] | None = None) -> PostgresCursor:
+        cursor = self._conn.execute(_postgres_sql(sql), params or ())
+        return PostgresCursor(cursor)
+
+    def executemany(self, sql: str, seq_of_params: Iterable[Sequence[Any]]) -> PostgresCursor:
+        cursor = self._conn.cursor()
+        cursor.executemany(_postgres_sql(sql), list(seq_of_params))
+        return PostgresCursor(cursor)
+
+    def executescript(self, script: str) -> None:
+        with self._conn.cursor() as cursor:
+            for statement in _split_sql_statements(script):
+                cursor.execute(_postgres_sql(statement))
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def _postgres_sql(sql: str) -> str:
+    return sql.replace("?", "%s")
+
+
+def _split_sql_statements(script: str) -> list[str]:
+    return [stmt.strip() for stmt in script.split(";") if stmt.strip()]
+
+
+def is_postgres_connection(conn: object) -> bool:
+    return isinstance(conn, PostgresConnection)
+
+
+def is_integrity_error(exc: BaseException) -> bool:
+    if isinstance(exc, sqlite3.IntegrityError):
+        return True
+    return bool(psycopg is not None and isinstance(exc, psycopg.IntegrityError))
+
 
 def connect(db_path: Path | None = None) -> sqlite3.Connection:
     """커넥션 반환. Row 팩토리로 dict 유사 접근 가능."""
     config.ensure_dirs()
+    if db_path is None and config.DATABASE_URL:
+        return PostgresConnection(config.DATABASE_URL)  # type: ignore[return-value]
     conn = sqlite3.connect(str(db_path or config.DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
@@ -300,7 +421,7 @@ def init_db(db_path: Path | None = None) -> None:
     """스키마 생성 (멱등) + 경량 마이그레이션."""
     conn = connect(db_path)
     try:
-        conn.executescript(SCHEMA)
+        conn.executescript(POSTGRES_SCHEMA if is_postgres_connection(conn) else SCHEMA)
         _migrate(conn)
         conn.commit()
     finally:
@@ -309,6 +430,10 @@ def init_db(db_path: Path | None = None) -> None:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """기존 DB에 누락된 컬럼을 추가 (SQLite는 ADD COLUMN IF NOT EXISTS 미지원)."""
+    if is_postgres_connection(conn):
+        _migrate_postgres(conn)
+        return
+
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(target_pages)").fetchall()}
     if "page_url" not in cols:
         conn.execute("ALTER TABLE target_pages ADD COLUMN page_url TEXT DEFAULT ''")
@@ -326,3 +451,32 @@ def _migrate(conn: sqlite3.Connection) -> None:
     ):
         if col not in ad_cols:
             conn.execute(f"ALTER TABLE ads ADD COLUMN {col} {ddl}")
+
+
+def _migrate_postgres(conn) -> None:
+    target_cols = _postgres_columns(conn, "target_pages")
+    if "page_url" not in target_cols:
+        conn.execute("ALTER TABLE target_pages ADD COLUMN page_url TEXT DEFAULT ''")
+
+    ad_cols = _postgres_columns(conn, "ads")
+    for col, ddl in (
+        ("fb_start_date", "TEXT DEFAULT ''"),
+        ("media_url", "TEXT DEFAULT ''"),
+        ("media_type", "TEXT DEFAULT 'unknown'"),
+        ("variant_count", "INTEGER DEFAULT 0"),
+        ("display_format", "TEXT DEFAULT ''"),
+        ("targeting", "TEXT DEFAULT ''"),
+        ("miss_streak", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if col not in ad_cols:
+            conn.execute(f"ALTER TABLE ads ADD COLUMN {col} {ddl}")
+
+
+def _postgres_columns(conn, table_name: str) -> set[str]:
+    rows = conn.execute(
+        """SELECT column_name
+           FROM information_schema.columns
+           WHERE table_schema='public' AND table_name=?""",
+        (table_name,),
+    ).fetchall()
+    return {r["column_name"] for r in rows}

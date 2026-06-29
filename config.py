@@ -18,6 +18,12 @@ except ImportError:  # python-dotenv 미설치 시에도 동작 (환경변수만
 # ── 경로 ───────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
+DATABASE_URL = (
+    os.getenv("ADINTEL_DATABASE_URL")
+    or os.getenv("SUPABASE_DATABASE_URL")
+    or os.getenv("DATABASE_URL")
+    or ""
+).strip()
 DB_PATH = Path(os.getenv("ADINTEL_DB_PATH", DATA_DIR / "adintel.db"))
 MEDIA_DIR = DATA_DIR / "media"
 MOCK_DIR = DATA_DIR / "mock"
@@ -82,6 +88,8 @@ DISAPPEAR_GRACE_RUNS = int(os.getenv("ADINTEL_DISAPPEAR_GRACE_RUNS", "2"))
 
 def ensure_dirs() -> None:
     """런타임 디렉터리 보장."""
+    if DATABASE_URL:
+        return
     if os.getenv("VERCEL"):
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         return

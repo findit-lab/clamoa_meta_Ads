@@ -7,6 +7,7 @@ import sqlite3
 from typing import Iterable
 
 import config
+from adintel import db as db_module
 from .models import AdAccount, Alert, InsightBreakdownRow, InsightRow
 from .normalizer import normalize_account_id
 
@@ -94,6 +95,22 @@ def record_sync_start(
     started_at: str | None = None,
 ) -> tuple[int, str]:
     ts = started_at or now_iso()
+    if db_module.is_postgres_connection(conn):
+        cur = conn.execute(
+            """INSERT INTO meta_sync_runs
+                 (ad_account_id, started_at, status, lookback_days, levels_json, api_version)
+               VALUES (?, ?, 'running', ?, ?, ?)
+               RETURNING run_id""",
+            (
+                normalize_account_id(ad_account_id),
+                ts,
+                int(lookback_days),
+                json.dumps(list(levels), ensure_ascii=False),
+                api_version,
+            ),
+        )
+        return int(cur.fetchone()["run_id"]), ts
+
     cur = conn.execute(
         """INSERT INTO meta_sync_runs
              (ad_account_id, started_at, status, lookback_days, levels_json, api_version)
@@ -331,6 +348,31 @@ def _breakdown_tuple(r: InsightBreakdownRow) -> tuple:
 
 
 def create_alert_event(conn: sqlite3.Connection, alert: Alert) -> bool:
+    if db_module.is_postgres_connection(conn):
+        cur = conn.execute(
+            """INSERT INTO meta_alert_events
+                 (fingerprint, alert_type, severity, ad_account_id, level,
+                  object_id, object_name, message, metric_value, threshold,
+                  detected_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(fingerprint) DO NOTHING
+               RETURNING alert_id""",
+            (
+                alert.fingerprint,
+                alert.alert_type,
+                alert.severity,
+                alert.ad_account_id,
+                alert.level,
+                alert.object_id,
+                alert.object_name,
+                alert.message,
+                alert.metric_value,
+                alert.threshold,
+                alert.detected_at,
+            ),
+        )
+        return cur.fetchone() is not None
+
     try:
         conn.execute(
             """INSERT INTO meta_alert_events
