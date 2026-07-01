@@ -190,6 +190,15 @@ def test_dashboard_summary_and_rankings(conn):
     assert monthly[0]["bucket"] == "2026-06"
 
 
+def test_dashboard_accounts_hide_inactive_accounts(conn):
+    store.upsert_ad_account(conn, "111", "Active Account", active=True)
+    store.upsert_ad_account(conn, "222", "Inactive Account", active=False)
+
+    accounts = dashboard_data.get_accounts(conn)
+
+    assert [account["ad_account_id"] for account in accounts] == ["111"]
+
+
 def test_dashboard_ads_include_creative_preview(conn):
     store.upsert_ad_account(conn, "111", "Account 111")
     _insert_campaign(conn)

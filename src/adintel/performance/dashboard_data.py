@@ -27,6 +27,7 @@ def get_accounts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                     WHERE r.ad_account_id=a.ad_account_id
                     ORDER BY r.started_at DESC LIMIT 1) AS last_sync_at
            FROM meta_ad_accounts a
+           WHERE a.active=1
            ORDER BY a.account_name"""
     ).fetchall()
     return [
