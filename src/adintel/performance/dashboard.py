@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 import config
 from adintel import db
-from . import alerts, dashboard_data
+from . import alerts, dashboard_data, landing_events
 from .capi import ALLOWED_EVENT_NAMES, MetaCapiError, MetaConversionsClient, build_event_payload
 from .meta_api import MetaApiError, MetaInsightsClient, friendly_error_message, is_access_token_expired
 from .models import SyncResult
@@ -146,8 +146,7 @@ def api_utm_event(payload: LandingUtmEvent, request: Request):
         raise HTTPException(status_code=400, detail=f"unsupported event: {payload.event_name}")
     conn = db.connect()
     try:
-        store.record_landing_utm_event(
-            conn,
+        row = store.landing_utm_event_row(
             event_name=payload.event_name,
             browser_event_id=payload.event_id,
             event_source_url=payload.event_source_url or str(request.headers.get("referer") or request.url),
@@ -157,6 +156,8 @@ def api_utm_event(payload: LandingUtmEvent, request: Request):
             utm=payload.utm,
             custom_data=payload.custom_data,
         )
+        store.insert_landing_utm_event_row(conn, row)
+        landing_events.record(row)
         conn.commit()
         return {"ok": True}
     finally:

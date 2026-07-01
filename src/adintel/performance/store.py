@@ -396,6 +396,63 @@ def record_landing_utm_event(
     custom_data: Mapping[str, Any] | None = None,
     captured_at: str | None = None,
 ) -> int | None:
+    row = landing_utm_event_row(
+        event_name=event_name,
+        event_source_url=event_source_url,
+        referrer=referrer,
+        session_id=session_id,
+        landing_key=landing_key,
+        browser_event_id=browser_event_id,
+        utm=utm,
+        custom_data=custom_data,
+        captured_at=captured_at,
+    )
+    return insert_landing_utm_event_row(conn, row)
+
+
+def insert_landing_utm_event_row(conn: sqlite3.Connection, row: Mapping[str, Any]) -> int | None:
+    cur = conn.execute(
+        """INSERT INTO landing_utm_events
+             (captured_at, event_name, browser_event_id, event_source_url,
+              page_path, referrer, session_id, landing_key, utm_source, utm_medium,
+              utm_campaign, utm_content, utm_term, traffic_source,
+              traffic_medium, traffic_campaign, raw_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            row["captured_at"],
+            row["event_name"],
+            row["browser_event_id"],
+            row["event_source_url"],
+            row["page_path"],
+            row["referrer"],
+            row["session_id"],
+            row["landing_key"],
+            row["utm_source"],
+            row["utm_medium"],
+            row["utm_campaign"],
+            row["utm_content"],
+            row["utm_term"],
+            row["traffic_source"],
+            row["traffic_medium"],
+            row["traffic_campaign"],
+            row["raw_json"],
+        ),
+    )
+    return getattr(cur, "lastrowid", None)
+
+
+def landing_utm_event_row(
+    *,
+    event_name: str,
+    event_source_url: str,
+    referrer: str = "",
+    session_id: str = "",
+    landing_key: str = "",
+    browser_event_id: str = "",
+    utm: Mapping[str, Any] | None = None,
+    custom_data: Mapping[str, Any] | None = None,
+    captured_at: str | None = None,
+) -> dict[str, Any]:
     ts = captured_at or now_iso()
     parsed = _parse_url(event_source_url)
     params = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
@@ -415,34 +472,25 @@ def record_landing_utm_event(
         "utm": dict(utm or {}),
         "custom_data": dict(custom_data or {}),
     }
-    cur = conn.execute(
-        """INSERT INTO landing_utm_events
-             (captured_at, event_name, browser_event_id, event_source_url,
-              page_path, referrer, session_id, landing_key, utm_source, utm_medium,
-              utm_campaign, utm_content, utm_term, traffic_source,
-              traffic_medium, traffic_campaign, raw_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            ts,
-            _clip(event_name, 64),
-            _clip(browser_event_id, 200),
-            _clip(event_source_url, 2000),
-            _clip(parsed.path or "/", 500),
-            _clip(referrer, 2000),
-            _clip(session_id, 200),
-            landing,
-            _clip(utm_values["utm_source"]),
-            _clip(utm_values["utm_medium"]),
-            _clip(utm_values["utm_campaign"]),
-            _clip(utm_values["utm_content"]),
-            _clip(utm_values["utm_term"]),
-            _clip(traffic_source, 100),
-            traffic_medium,
-            traffic_campaign,
-            json.dumps(raw, ensure_ascii=False, sort_keys=True),
-        ),
-    )
-    return getattr(cur, "lastrowid", None)
+    return {
+        "captured_at": ts,
+        "event_name": _clip(event_name, 64),
+        "browser_event_id": _clip(browser_event_id, 200),
+        "event_source_url": _clip(event_source_url, 2000),
+        "page_path": _clip(parsed.path or "/", 500),
+        "referrer": _clip(referrer, 2000),
+        "session_id": _clip(session_id, 200),
+        "landing_key": landing,
+        "utm_source": _clip(utm_values["utm_source"]),
+        "utm_medium": _clip(utm_values["utm_medium"]),
+        "utm_campaign": _clip(utm_values["utm_campaign"]),
+        "utm_content": _clip(utm_values["utm_content"]),
+        "utm_term": _clip(utm_values["utm_term"]),
+        "traffic_source": _clip(traffic_source, 100),
+        "traffic_medium": traffic_medium,
+        "traffic_campaign": traffic_campaign,
+        "raw_json": json.dumps(raw, ensure_ascii=False, sort_keys=True),
+    }
 
 
 def _landing_key(value: str, event_source_url: str) -> str:

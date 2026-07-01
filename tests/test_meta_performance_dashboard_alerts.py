@@ -366,6 +366,62 @@ def test_landing_utm_events_group_traffic_sources(conn):
     assert asinayo_rows["naver"]["clicks"] == 1
 
 
+def test_landing_utm_events_group_durable_traffic_sources(conn, monkeypatch):
+    monkeypatch.setattr(
+        dashboard_data.landing_events,
+        "fetch",
+        lambda **kwargs: [
+            {
+                "captured_at": "2026-06-25T00:00:00+00:00",
+                "event_name": "PageView",
+                "session_id": "s-meta",
+                "landing_key": "clamoa",
+                "traffic_source": "meta",
+                "traffic_medium": "paid_social",
+                "traffic_campaign": "brandfit",
+            },
+            {
+                "captured_at": "2026-06-25T00:01:00+00:00",
+                "event_name": "Lead",
+                "session_id": "s-meta",
+                "landing_key": "clamoa",
+                "traffic_source": "meta",
+                "traffic_medium": "paid_social",
+                "traffic_campaign": "brandfit",
+            },
+            {
+                "captured_at": "2026-06-25T00:02:00+00:00",
+                "event_name": "PageView",
+                "session_id": "s-asinayo",
+                "landing_key": "asinayo",
+                "traffic_source": "naver",
+            },
+        ],
+    )
+
+    rows = dashboard_data.get_traffic_sources(
+        conn,
+        start="2026-06-25",
+        end="2026-06-25",
+    )
+
+    assert rows == [
+        {
+            "id": "meta",
+            "name": "Meta",
+            "landing_key": "clamoa",
+            "traffic_source": "meta",
+            "traffic_medium": "paid_social",
+            "traffic_campaign": "brandfit",
+            "clicks": 1,
+            "sessions": 1,
+            "conversions": 1,
+            "events": 2,
+            "conversion_rate": 100.0,
+        }
+    ]
+
+
 def test_sync_response_marks_expired_token():
     response = _sync_response(
         [

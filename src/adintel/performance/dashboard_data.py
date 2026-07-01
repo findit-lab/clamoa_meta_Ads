@@ -6,7 +6,7 @@ import sqlite3
 from typing import Any
 from urllib.parse import parse_qsl
 
-from . import alerts
+from . import alerts, landing_events
 from .normalizer import metrics_from_action_json, normalize_account_id
 
 
@@ -340,6 +340,10 @@ def get_traffic_sources(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     landing = _clean_landing_key(landing_key)
+    durable_rows = landing_events.fetch(start=start, end=end, landing_key=landing, limit=5000)
+    if durable_rows:
+        return _traffic_sources_from_landing_rows(durable_rows, landing=landing, limit=limit)
+
     rows = conn.execute(
         """SELECT
              COALESCE(NULLIF(traffic_source, ''), 'direct') AS traffic_source,
@@ -381,6 +385,60 @@ def get_traffic_sources(
             }
         )
     return out
+
+
+def _traffic_sources_from_landing_rows(
+    rows: list[dict[str, Any]],
+    *,
+    landing: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if landing != "all" and row.get("landing_key") != landing:
+            continue
+        source = str(row.get("traffic_source") or "direct")
+        group = groups.setdefault(
+            source,
+            {
+                "id": source,
+                "name": _traffic_source_label(source),
+                "landing_key": row.get("landing_key") or landing,
+                "traffic_source": source,
+                "traffic_medium": "",
+                "traffic_campaign": "",
+                "clicks": 0,
+                "sessions": set(),
+                "conversions": 0,
+                "events": 0,
+            },
+        )
+        group["events"] += 1
+        if row.get("traffic_medium"):
+            group["traffic_medium"] = row["traffic_medium"]
+        if row.get("traffic_campaign"):
+            group["traffic_campaign"] = row["traffic_campaign"]
+        if row.get("event_name") == "PageView":
+            group["clicks"] += 1
+            session_id = str(row.get("session_id") or "")
+            if session_id:
+                group["sessions"].add(session_id)
+        if row.get("event_name") == "Lead":
+            group["conversions"] += 1
+
+    out = []
+    for group in groups.values():
+        clicks = int(group["clicks"] or 0)
+        conversions = int(group["conversions"] or 0)
+        out.append(
+            {
+                **group,
+                "sessions": len(group["sessions"]),
+                "conversion_rate": (conversions / clicks * 100) if clicks else 0.0,
+            }
+        )
+    out.sort(key=lambda row: (-row["clicks"], -row["conversions"], row["traffic_source"]))
+    return out[: int(limit)]
 
 
 def _fetch_rows(
