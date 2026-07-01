@@ -141,7 +141,7 @@ class MetaInsightsClient:
             params = {
                 "access_token": self.access_token,
                 "ids": ",".join(chunk),
-                "fields": "effective_status,creative{id,thumbnail_url,image_url}",
+                "fields": "effective_status,creative{id,thumbnail_url,image_url,url_tags}",
             }
             url = (
                 f"https://graph.facebook.com/{self.api_version}/?"
@@ -161,6 +161,7 @@ class MetaInsightsClient:
                         thumbnail_url=str(creative.get("thumbnail_url") or ""),
                         image_url=str(creative.get("image_url") or ""),
                         effective_status=str(raw.get("effective_status") or ""),
+                        url_tags=str(creative.get("url_tags") or raw.get("url_tags") or ""),
                         raw_json=json.dumps(raw, ensure_ascii=False, sort_keys=True),
                         synced_at=synced_at,
                     )

@@ -23,6 +23,14 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DIR = ROOT / "data/ad_creatives/meta_ads_260623"
 LANDING = "https://clamoa.com"
 
+# Meta 소재 단위 UTM(=creative.url_tags). 메타가 모든 도착 URL에 자동으로 덧붙인다.
+# {{site_source_name}}=fb/ig/an/msg, {{placement}}=게재위치 → FB/IG/지면까지 구분.
+# 네이버 트래픽과 갈리는 핵심은 utm_source=meta. 네이버 측은 utm_source=naver로 별도 태깅.
+URL_TAGS = (
+    "utm_source=meta&utm_medium=paid_social&utm_campaign=clamoa_brandfit"
+    "&utm_content={{site_source_name}}_{{placement}}"
+)
+
 # 슬라이드 파일명 → 카드 헤드라인/설명 (캐러셀 카피와 동일 매핑)
 CARDS = [
     ("bf_0_cover.png",   "아무 셀럽에게나 협찬하고 계신가요?", "패션 브랜드 협찬 마케팅"),
@@ -86,8 +94,10 @@ def main() -> None:
         })
 
     # Meta object_story_spec (페이지 ID는 MCP 생성 시점에 주입)
+    # url_tags는 creative 레벨 필드 → 소재 생성 시 creative에 그대로 넣을 것.
     out = {
         "landing": args.landing,
+        "url_tags": URL_TAGS,
         "child_attachments": cards,
     }
     print(json.dumps(out, ensure_ascii=False, indent=2))

@@ -17,6 +17,26 @@ try:
 except ImportError:  # pragma: no cover - exercised only when Postgres is configured.
     psycopg = None  # type: ignore[assignment]
 
+LANDING_UTM_EVENT_COLUMN_MIGRATIONS = (
+    ("captured_at", "TEXT DEFAULT ''"),
+    ("event_name", "TEXT DEFAULT ''"),
+    ("browser_event_id", "TEXT DEFAULT ''"),
+    ("event_source_url", "TEXT DEFAULT ''"),
+    ("page_path", "TEXT DEFAULT ''"),
+    ("referrer", "TEXT DEFAULT ''"),
+    ("session_id", "TEXT DEFAULT ''"),
+    ("landing_key", "TEXT DEFAULT ''"),
+    ("utm_source", "TEXT DEFAULT ''"),
+    ("utm_medium", "TEXT DEFAULT ''"),
+    ("utm_campaign", "TEXT DEFAULT ''"),
+    ("utm_content", "TEXT DEFAULT ''"),
+    ("utm_term", "TEXT DEFAULT ''"),
+    ("traffic_source", "TEXT DEFAULT ''"),
+    ("traffic_medium", "TEXT DEFAULT ''"),
+    ("traffic_campaign", "TEXT DEFAULT ''"),
+    ("raw_json", "TEXT DEFAULT '{}'"),
+)
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 
@@ -218,12 +238,43 @@ CREATE TABLE IF NOT EXISTS meta_ad_creatives (
     thumbnail_url    TEXT DEFAULT '',
     image_url        TEXT DEFAULT '',
     effective_status TEXT DEFAULT '',
+    url_tags         TEXT DEFAULT '',
     raw_json         TEXT DEFAULT '{}',
     synced_at        TEXT NOT NULL,
     PRIMARY KEY (ad_account_id, ad_id)
 );
 CREATE INDEX IF NOT EXISTS idx_meta_ad_creatives_status
 ON meta_ad_creatives(ad_account_id, effective_status);
+
+-- 랜딩 도착/전환 UTM 이벤트. 광고 플랫폼 API가 아니라 실제 웹 유입 기준.
+CREATE TABLE IF NOT EXISTS landing_utm_events (
+    landing_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    captured_at      TEXT NOT NULL,
+    event_name       TEXT NOT NULL, -- PageView | ViewContent | Lead
+    browser_event_id TEXT DEFAULT '',
+    event_source_url TEXT DEFAULT '',
+    page_path        TEXT DEFAULT '',
+    referrer         TEXT DEFAULT '',
+    session_id       TEXT DEFAULT '',
+    landing_key      TEXT DEFAULT '',
+    utm_source       TEXT DEFAULT '',
+    utm_medium       TEXT DEFAULT '',
+    utm_campaign     TEXT DEFAULT '',
+    utm_content      TEXT DEFAULT '',
+    utm_term         TEXT DEFAULT '',
+    traffic_source   TEXT DEFAULT '',
+    traffic_medium   TEXT DEFAULT '',
+    traffic_campaign TEXT DEFAULT '',
+    raw_json         TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_landing_utm_events_captured
+ON landing_utm_events(captured_at);
+CREATE INDEX IF NOT EXISTS idx_landing_utm_events_source
+ON landing_utm_events(traffic_source, captured_at);
+CREATE INDEX IF NOT EXISTS idx_landing_utm_events_event
+ON landing_utm_events(event_name, captured_at);
+CREATE INDEX IF NOT EXISTS idx_landing_utm_events_landing
+ON landing_utm_events(landing_key, captured_at);
 
 -- 당일 누적값 스냅샷. 15-30분 단위 추이 표시용.
 CREATE TABLE IF NOT EXISTS meta_insight_snapshots (
@@ -440,11 +491,39 @@ def init_db(db_path: Path | None = None) -> None:
     """스키마 생성 (멱등) + 경량 마이그레이션."""
     conn = connect(db_path)
     try:
+        _pre_migrate_schema_dependencies(conn)
         conn.executescript(POSTGRES_SCHEMA if is_postgres_connection(conn) else SCHEMA)
         _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _pre_migrate_schema_dependencies(conn: sqlite3.Connection) -> None:
+    """스키마 내 신규 인덱스가 참조하는 컬럼을 먼저 보강한다."""
+    if is_postgres_connection(conn):
+        landing_cols = _postgres_columns(conn, "landing_utm_events")
+        if landing_cols:
+            _ensure_landing_utm_event_columns(conn, landing_cols)
+        return
+
+    table = conn.execute(
+        """SELECT name
+           FROM sqlite_master
+           WHERE type='table' AND name='landing_utm_events'"""
+    ).fetchone()
+    if not table:
+        return
+    landing_cols = {
+        r["name"] for r in conn.execute("PRAGMA table_info(landing_utm_events)").fetchall()
+    }
+    _ensure_landing_utm_event_columns(conn, landing_cols)
+
+
+def _ensure_landing_utm_event_columns(conn: sqlite3.Connection, cols: set[str]) -> None:
+    for col, ddl in LANDING_UTM_EVENT_COLUMN_MIGRATIONS:
+        if col not in cols:
+            conn.execute(f"ALTER TABLE landing_utm_events ADD COLUMN {col} {ddl}")
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -471,6 +550,27 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if col not in ad_cols:
             conn.execute(f"ALTER TABLE ads ADD COLUMN {col} {ddl}")
 
+    creative_cols = {
+        r["name"] for r in conn.execute("PRAGMA table_info(meta_ad_creatives)").fetchall()
+    }
+    if "url_tags" not in creative_cols:
+        conn.execute("ALTER TABLE meta_ad_creatives ADD COLUMN url_tags TEXT DEFAULT ''")
+
+    landing_cols = {
+        r["name"] for r in conn.execute("PRAGMA table_info(landing_utm_events)").fetchall()
+    }
+    if landing_cols:
+        _ensure_landing_utm_event_columns(conn, landing_cols)
+        conn.execute(
+            """UPDATE landing_utm_events
+               SET landing_key = CASE
+                 WHEN lower(event_source_url) LIKE '%clamoa%' THEN 'clamoa'
+                 WHEN lower(event_source_url) LIKE '%asinayo%' THEN 'asinayo'
+                 ELSE 'unknown'
+               END
+               WHERE COALESCE(landing_key, '')=''"""
+        )
+
 
 def _migrate_postgres(conn) -> None:
     target_cols = _postgres_columns(conn, "target_pages")
@@ -489,6 +589,23 @@ def _migrate_postgres(conn) -> None:
     ):
         if col not in ad_cols:
             conn.execute(f"ALTER TABLE ads ADD COLUMN {col} {ddl}")
+
+    creative_cols = _postgres_columns(conn, "meta_ad_creatives")
+    if "url_tags" not in creative_cols:
+        conn.execute("ALTER TABLE meta_ad_creatives ADD COLUMN url_tags TEXT DEFAULT ''")
+
+    landing_cols = _postgres_columns(conn, "landing_utm_events")
+    if landing_cols:
+        _ensure_landing_utm_event_columns(conn, landing_cols)
+        conn.execute(
+            """UPDATE landing_utm_events
+               SET landing_key = CASE
+                 WHEN lower(event_source_url) LIKE '%clamoa%' THEN 'clamoa'
+                 WHEN lower(event_source_url) LIKE '%asinayo%' THEN 'asinayo'
+                 ELSE 'unknown'
+               END
+               WHERE COALESCE(landing_key, '')=''"""
+        )
 
 
 def _postgres_columns(conn, table_name: str) -> set[str]:

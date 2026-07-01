@@ -63,6 +63,7 @@ class AdCreative:
     thumbnail_url: str = ""
     image_url: str = ""
     effective_status: str = ""
+    url_tags: str = ""
     raw_json: str = "{}"
     synced_at: str = ""
 

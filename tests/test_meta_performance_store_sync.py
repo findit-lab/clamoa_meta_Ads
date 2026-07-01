@@ -83,6 +83,7 @@ class FakeClient:
                 thumbnail_url=f"https://cdn.example/{ad_id}.jpg",
                 image_url=f"https://cdn.example/{ad_id}-full.jpg",
                 effective_status="ACTIVE",
+                url_tags="utm_source=meta&utm_medium=paid_social&utm_campaign=test",
                 raw_json="{}",
                 synced_at=synced_at,
             )
@@ -164,6 +165,7 @@ def test_upsert_ad_creatives_replaces_preview(conn):
         thumbnail_url="https://cdn.example/old.jpg",
         image_url="https://cdn.example/old-full.jpg",
         effective_status="ACTIVE",
+        url_tags="utm_source=meta&utm_campaign=old",
         raw_json="{}",
         synced_at="2026-06-25T00:00:00+00:00",
     )
@@ -174,6 +176,7 @@ def test_upsert_ad_creatives_replaces_preview(conn):
         thumbnail_url="",
         image_url="https://cdn.example/new-full.jpg",
         effective_status="PAUSED",
+        url_tags="utm_source=meta&utm_campaign=new",
         raw_json="{}",
         synced_at="2026-06-26T00:00:00+00:00",
     )
@@ -185,6 +188,7 @@ def test_upsert_ad_creatives_replaces_preview(conn):
     assert row["thumbnail_url"] == ""
     assert row["image_url"] == "https://cdn.example/new-full.jpg"
     assert row["effective_status"] == "PAUSED"
+    assert row["url_tags"] == "utm_source=meta&utm_campaign=new"
 
 
 def test_ad_level_sync_stores_creative_preview(conn):
@@ -201,3 +205,4 @@ def test_ad_level_sync_stores_creative_preview(conn):
     row = conn.execute("SELECT * FROM meta_ad_creatives WHERE ad_id='ad-1'").fetchone()
     assert row["creative_id"] == "creative-ad-1"
     assert row["thumbnail_url"] == "https://cdn.example/ad-1.jpg"
+    assert row["url_tags"] == "utm_source=meta&utm_medium=paid_social&utm_campaign=test"

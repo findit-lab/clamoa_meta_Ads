@@ -6,6 +6,7 @@
   "ad_name": "clamoa_브랜드맞춤협찬_캐러셀_광고",
   "creative": {
     "name": "clamoa_브랜드맞춤협찬_캐러셀_creative",
+    "url_tags": "utm_source=meta&utm_medium=paid_social&utm_campaign=clamoa_brandfit&utm_content={{site_source_name}}_{{placement}}",
     "object_story_spec": {
       "page_id": "1178474898684007",
       "link_data": {

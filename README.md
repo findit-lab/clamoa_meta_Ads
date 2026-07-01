@@ -94,6 +94,9 @@ python3 scripts/serve_dashboard.py
 - `META_ACCESS_TOKEN`: Meta Marketing API 토큰.
 - `META_AD_ACCOUNTS`: 서버리스 첫 기동 시 계정 레지스트리 시드. 예:
   `1700079570882719|clamoa|KRW|Asia/Seoul|landing_click`
+- `CLAMOA_META_PIXEL_ID`: Clamoa 패션홍보대행사 랜딩 전용 Meta Pixel/Dataset ID.
+- `CLAMOA_META_CAPI_ACCESS_TOKEN`: Clamoa Pixel의 Conversions API access token. 없으면 `META_CAPI_ACCESS_TOKEN`, `META_ACCESS_TOKEN` 순서로 fallback.
+- `META_CAPI_ALLOWED_ORIGINS`: 랜딩과 CAPI API가 다른 도메인일 때 허용할 origin 목록.
 
 배포 후 최초 1회:
 
@@ -103,6 +106,41 @@ curl -X POST "https://<vercel-url>/api/sync?lookback_days=5"
 
 `DATABASE_URL`이 없으면 Vercel은 `/tmp/adintel.db` 임시 SQLite로 fallback하므로,
 재배포/콜드스타트 때 데이터가 비어 보일 수 있다.
+
+## Clamoa 랜딩 UTM + 선택 Pixel/CAPI
+
+현재 Meta 광고 계정은 **Clamoa 패션홍보대행사 광고** 기준이다. 대시보드는
+`/api/utm/event`에 저장된 랜딩 이벤트 중 `landing_key=clamoa`만 유입 소스 표에
+집계하므로, asinayo 아카이브 랜딩 이벤트와 섞이지 않는다.
+
+Clamoa 랜딩은 PageView/Lead 이벤트를 `/api/utm/event`로 보내고, 필요하면 같은
+`event_id`를 `/api/meta/capi`로 보내 브라우저 Pixel 이벤트와 dedup 되도록 구성한다.
+
+이벤트 매핑:
+- `PageView`: 페이지 로드
+- `ViewContent`: 랜딩 도달
+- `Lead`: 상담/문의 폼 제출
+
+Dataset/Pixel 생성:
+
+```bash
+python3 scripts/create_meta_pixel.py --account-id act_<AD_ACCOUNT_ID> --name "clamoa website"
+```
+
+출력된 `CLAMOA_META_PIXEL_ID`를 Vercel env와 Clamoa 랜딩 `meta-pixel-id`에 반영한다.
+랜딩과 API가 다른 도메인이면 `meta-capi-endpoint`를 절대 URL로 바꾸고
+`utm-event-endpoint`도 같은 API 도메인의 절대 URL로 바꾼다.
+`META_CAPI_ALLOWED_ORIGINS`에 랜딩 origin을 추가한다.
+운영 전 Events Manager의 Test Events 코드가 있으면 `META_CAPI_TEST_EVENT_CODE`로
+검증하고, 운영 배포 전에는 값을 비운다.
+
+광고 URL UTM 예:
+- Meta: `?utm_source=meta&utm_medium=paid_social&utm_campaign=clamoa_brandfit`
+- Naver: `?utm_source=naver&utm_medium=paid_search&utm_campaign=brandfit`
+- Google: `?utm_source=google&utm_medium=paid_search&utm_campaign=brandfit`
+
+참고: `99_Archive/asinayo_homepage/index.html`은 별도 아카이브 랜딩이며
+`landing_key=asinayo`로 이벤트를 보내도록 분리되어 있다.
 
 ## 범위 밖 (이번 스캐폴드 제외)
 

@@ -4,7 +4,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sqlite3
-from typing import Iterable
+import urllib.parse
+from typing import Any, Iterable, Mapping
 
 import config
 from adintel import db as db_module
@@ -353,13 +354,14 @@ def upsert_ad_creatives(conn: sqlite3.Connection, rows: list[AdCreative]) -> int
     conn.executemany(
         """INSERT INTO meta_ad_creatives
              (ad_account_id, ad_id, creative_id, thumbnail_url, image_url,
-              effective_status, raw_json, synced_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              effective_status, url_tags, raw_json, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(ad_account_id, ad_id) DO UPDATE SET
               creative_id=excluded.creative_id,
               thumbnail_url=excluded.thumbnail_url,
               image_url=excluded.image_url,
               effective_status=excluded.effective_status,
+              url_tags=excluded.url_tags,
               raw_json=excluded.raw_json,
               synced_at=excluded.synced_at""",
         [_ad_creative_tuple(r) for r in rows],
@@ -375,9 +377,163 @@ def _ad_creative_tuple(r: AdCreative) -> tuple:
         r.thumbnail_url,
         r.image_url,
         r.effective_status,
+        r.url_tags,
         r.raw_json,
         r.synced_at,
     )
+
+
+def record_landing_utm_event(
+    conn: sqlite3.Connection,
+    *,
+    event_name: str,
+    event_source_url: str,
+    referrer: str = "",
+    session_id: str = "",
+    landing_key: str = "",
+    browser_event_id: str = "",
+    utm: Mapping[str, Any] | None = None,
+    custom_data: Mapping[str, Any] | None = None,
+    captured_at: str | None = None,
+) -> int | None:
+    ts = captured_at or now_iso()
+    parsed = _parse_url(event_source_url)
+    params = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    utm_values = _utm_values(params, utm or {})
+    traffic_source = _traffic_source(
+        utm_values["utm_source"],
+        params=params,
+        referrer=referrer,
+    )
+    traffic_medium = _clip(utm_values["utm_medium"] or _default_medium(traffic_source))
+    traffic_campaign = _clip(utm_values["utm_campaign"])
+    landing = _landing_key(landing_key, event_source_url)
+    raw = {
+        "event_source_url": event_source_url,
+        "referrer": referrer,
+        "landing_key": landing,
+        "utm": dict(utm or {}),
+        "custom_data": dict(custom_data or {}),
+    }
+    cur = conn.execute(
+        """INSERT INTO landing_utm_events
+             (captured_at, event_name, browser_event_id, event_source_url,
+              page_path, referrer, session_id, landing_key, utm_source, utm_medium,
+              utm_campaign, utm_content, utm_term, traffic_source,
+              traffic_medium, traffic_campaign, raw_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            ts,
+            _clip(event_name, 64),
+            _clip(browser_event_id, 200),
+            _clip(event_source_url, 2000),
+            _clip(parsed.path or "/", 500),
+            _clip(referrer, 2000),
+            _clip(session_id, 200),
+            landing,
+            _clip(utm_values["utm_source"]),
+            _clip(utm_values["utm_medium"]),
+            _clip(utm_values["utm_campaign"]),
+            _clip(utm_values["utm_content"]),
+            _clip(utm_values["utm_term"]),
+            _clip(traffic_source, 100),
+            traffic_medium,
+            traffic_campaign,
+            json.dumps(raw, ensure_ascii=False, sort_keys=True),
+        ),
+    )
+    return getattr(cur, "lastrowid", None)
+
+
+def _landing_key(value: str, event_source_url: str) -> str:
+    explicit = _source_slug(value)
+    if explicit:
+        return explicit
+    host = _parse_url(event_source_url).netloc.lower()
+    if "clamoa" in host:
+        return "clamoa"
+    if "asinayo" in host:
+        return "asinayo"
+    return "unknown"
+
+
+def _parse_url(url: str) -> urllib.parse.ParseResult:
+    try:
+        return urllib.parse.urlparse(str(url or ""))
+    except ValueError:
+        return urllib.parse.urlparse("")
+
+
+def _utm_values(
+    query_params: Mapping[str, Any],
+    payload_utm: Mapping[str, Any],
+) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key in ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"):
+        value = payload_utm.get(key) or query_params.get(key) or ""
+        out[key] = str(value).strip()
+    if not out["utm_source"]:
+        if query_params.get("gclid") or query_params.get("gad_source"):
+            out["utm_source"] = "google"
+        elif query_params.get("fbclid"):
+            out["utm_source"] = "meta"
+        elif any(str(k).startswith("n_") for k in query_params):
+            out["utm_source"] = "naver"
+    return out
+
+
+def _traffic_source(
+    utm_source: str,
+    *,
+    params: Mapping[str, Any],
+    referrer: str,
+) -> str:
+    source = _source_slug(utm_source)
+    if source:
+        return source
+    if params.get("gclid") or params.get("gad_source"):
+        return "google"
+    if params.get("fbclid"):
+        return "meta"
+    if any(str(k).startswith("n_") for k in params):
+        return "naver"
+    host = _parse_url(referrer).netloc.lower()
+    if not host:
+        return "direct"
+    if "naver." in host:
+        return "naver"
+    if "google." in host or "youtube." in host:
+        return "google"
+    if any(token in host for token in ("facebook.", "instagram.", "threads.", "meta.")):
+        return "meta"
+    return _clip(host.replace("www.", ""), 100)
+
+
+def _source_slug(value: str) -> str:
+    source = str(value or "").strip().lower()
+    if not source:
+        return ""
+    if source in {"fb", "ig", "facebook", "instagram", "threads"} or "facebook" in source:
+        return "meta"
+    if "instagram" in source or "meta" in source:
+        return "meta"
+    if "naver" in source or "네이버" in source:
+        return "naver"
+    if "google" in source or "youtube" in source:
+        return "google"
+    return _clip(source.replace(" ", "_"), 100)
+
+
+def _default_medium(source: str) -> str:
+    if source in {"meta", "naver", "google"}:
+        return "paid"
+    if source == "direct":
+        return "none"
+    return "referral"
+
+
+def _clip(value: Any, limit: int = 500) -> str:
+    return str(value or "")[:limit]
 
 
 def create_alert_event(conn: sqlite3.Connection, alert: Alert) -> bool:

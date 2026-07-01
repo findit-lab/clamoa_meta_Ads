@@ -69,7 +69,7 @@
     main { padding: 18px 0 32px; }
     .filters {
       display: grid;
-      grid-template-columns: repeat(7, minmax(120px, 1fr)) auto;
+      grid-template-columns: repeat(8, minmax(120px, 1fr)) auto;
       gap: 10px;
       align-items: end;
       margin-bottom: 14px;
@@ -400,6 +400,13 @@
       <label>광고
         <select id="adFilter"></select>
       </label>
+      <label>UTM
+        <select id="utmFilter">
+          <option value="all">전체 광고</option>
+          <option value="utm">UTM 광고만</option>
+          <option value="non_utm">일반 광고만</option>
+        </select>
+      </label>
       <label>시작일
         <input id="startDate" type="date">
       </label>
@@ -462,6 +469,14 @@
 
     <section class="tables">
       <div class="card panel wide">
+        <div class="panel-head"><h2>Clamoa 랜딩 유입 소스별 성과</h2></div>
+        <div class="table-wrap" id="trafficSourceTable"></div>
+      </div>
+      <div class="card panel wide">
+        <div class="panel-head"><h2>UTM 광고 연동</h2></div>
+        <div class="table-wrap" id="utmTable"></div>
+      </div>
+      <div class="card panel wide">
         <div class="panel-head"><h2>플랫폼별 게재 현황</h2></div>
         <div class="table-wrap" id="platformTable"></div>
       </div>
@@ -508,6 +523,7 @@
         ["end", "endDate"],
         ["target_action", "targetAction"],
         ["trend_grain", "trendGrain"],
+        ["utm_filter", "utmFilter"],
       ]) {
         const value = document.getElementById(id).value;
         if (value) q.set(key, value);
@@ -549,7 +565,10 @@
         (!selectedAccount || a.ad_account_id === selectedAccount)
       );
       ad.innerHTML = `<option value="">전체 광고</option>` +
-        filtered.map(a => `<option value="${a.ad_id}">${escapeHtml(a.ad_name)}</option>`).join("");
+        filtered.map(a => {
+          const suffix = a.is_utm ? " · UTM" : "";
+          return `<option value="${a.ad_id}">${escapeHtml((a.ad_name || a.ad_id) + suffix)}</option>`;
+        }).join("");
       if (filtered.some(a => a.ad_id === current)) ad.value = current;
     }
 
@@ -578,6 +597,9 @@
       const conversionLabel = targetActionLabel();
       const cpa = summary.cpa ? `₩${money.format(summary.cpa)}` : "-";
       const roas = summary.purchase_roas ? `${number.format(summary.purchase_roas)}x` : "-";
+      const utmText = summary.utm_ad_count
+        ? `UTM 광고 ${money.format(summary.utm_ad_count)}개가 연결되어 있고, 지출은 ₩${money.format(summary.utm_spend || 0)}입니다.`
+        : "연결된 UTM 광고 성과는 아직 없습니다.";
       const alertCount = alerts.length;
       const alertText = alertCount
         ? `현재 확인할 이상 징후가 ${money.format(alertCount)}건 있습니다.`
@@ -594,12 +616,13 @@
         `${summary.start}부터 ${summary.end}까지 지출은 ₩${money.format(summary.spend || 0)}, ` +
         `${conversionLabel} 전환은 ${number.format(summary.conversions || 0)}건입니다. ` +
         `CPA는 ${cpa}, ROAS는 ${roas}, CTR은 ${number.format(summary.ctr || 0)}%입니다. ` +
-        `${spendLeader} ${conversionLeader} ${alertText}`;
+        `${utmText} ${spendLeader} ${conversionLeader} ${alertText}`;
       document.getElementById("descriptionMetrics").innerHTML = [
         ["지출", `₩${money.format(summary.spend || 0)}`],
         [conversionLabel, number.format(summary.conversions || 0)],
         ["CPA", cpa],
         ["ROAS", roas],
+        ["UTM 광고", `${money.format(summary.utm_ad_count || 0)}개`],
         ["알림", `${money.format(alertCount)}건`],
       ].map(([label, value]) => `<span class="description-chip">${escapeHtml(label)} ${escapeHtml(value)}</span>`).join("");
     }
@@ -629,6 +652,8 @@
 
     function renderInsights(data) {
       renderTrend(data.trend || []);
+      renderTrafficSourceTable(data.traffic_sources || []);
+      renderUtmTable(data.utms || []);
       renderPlatformTable(data.platforms || []);
       renderTable("accountTable", data.accounts || []);
       renderTable("campaignTable", data.campaigns || []);
@@ -731,6 +756,70 @@
       `;
     }
 
+    function renderUtmTable(rows) {
+      const el = document.getElementById("utmTable");
+      if (!rows.length) {
+        el.innerHTML = `<div class="empty">UTM 광고 데이터 없음</div>`;
+        return;
+      }
+      el.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>UTM</th><th>광고 수</th><th>지출</th><th>전환</th><th>CPA</th><th>CTR</th><th>CPC</th><th>CPM</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>
+                  <div class="ad-name">${escapeHtml(r.name || r.id || "")}</div>
+                  <div class="ad-meta">${escapeHtml(utmMeta(r))}</div>
+                </td>
+                <td>${money.format(r.ad_count || 0)}</td>
+                <td>₩${money.format(r.spend || 0)}</td>
+                <td>${number.format(r.conversions || 0)}</td>
+                <td>${r.cpa ? `₩${money.format(r.cpa)}` : "-"}</td>
+                <td>${number.format(r.ctr || 0)}%</td>
+                <td>${r.cpc ? `₩${money.format(r.cpc)}` : "-"}</td>
+                <td>${r.cpm ? `₩${money.format(r.cpm)}` : "-"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderTrafficSourceTable(rows) {
+      const el = document.getElementById("trafficSourceTable");
+      if (!rows.length) {
+        el.innerHTML = `<div class="empty">Clamoa 랜딩 UTM 이벤트 데이터 없음</div>`;
+        return;
+      }
+      el.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>소스</th><th>클릭</th><th>세션</th><th>전환</th><th>전환율</th><th>Medium</th><th>Campaign</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${escapeHtml(r.name || r.id || "")}</td>
+                <td>${money.format(r.clicks || 0)}</td>
+                <td>${money.format(r.sessions || 0)}</td>
+                <td>${money.format(r.conversions || 0)}</td>
+                <td>${number.format(r.conversion_rate || 0)}%</td>
+                <td>${escapeHtml(r.traffic_medium || "-")}</td>
+                <td>${escapeHtml(r.traffic_campaign || "-")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
     function renderTable(id, rows) {
       const el = document.getElementById(id);
       if (!rows.length) {
@@ -796,7 +885,8 @@
     function renderAdCell(row) {
       const imageUrl = row.thumbnail_url || row.image_url || "";
       const status = row.effective_status ? ` · ${row.effective_status}` : "";
-      const meta = `${row.id || ""}${status}`;
+      const utm = row.is_utm ? ` · UTM${row.utm_campaign ? `:${row.utm_campaign}` : ""}` : "";
+      const meta = `${row.id || ""}${status}${utm}`;
       const img = imageUrl
         ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(row.name || row.id || "ad creative")}" loading="lazy" onerror="this.parentElement.classList.add('missing'); this.remove();">`
         : "";
@@ -897,13 +987,14 @@
       applyInitialInput("endDate", "end");
       applyInitialSelect("trendGrain", "trend_grain");
       applyInitialSelect("targetAction", "target_action");
+      applyInitialSelect("utmFilter", "utm_filter");
       for (const id of ["accountFilter", "campaignFilter"]) {
         document.getElementById(id).addEventListener("change", () => {
           renderAdOptions();
           refresh();
         });
       }
-      for (const id of ["adFilter", "startDate", "endDate", "trendGrain", "targetAction"]) {
+      for (const id of ["adFilter", "utmFilter", "startDate", "endDate", "trendGrain", "targetAction"]) {
         document.getElementById(id).addEventListener("change", refresh);
       }
       document.getElementById("syncButton").addEventListener("click", manualSync);
@@ -926,6 +1017,15 @@
     function targetActionLabel() {
       const select = document.getElementById("targetAction");
       return select.options[select.selectedIndex]?.text || select.value;
+    }
+
+    function utmMeta(row) {
+      const parts = [
+        row.utm_source ? `source=${row.utm_source}` : "",
+        row.utm_medium ? `medium=${row.utm_medium}` : "",
+        row.utm_content ? `content=${row.utm_content}` : "",
+      ].filter(Boolean);
+      return parts.join(" · ") || "광고명 기준 UTM";
     }
 
     bind();

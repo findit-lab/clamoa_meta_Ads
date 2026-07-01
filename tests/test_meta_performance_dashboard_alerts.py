@@ -220,6 +220,152 @@ def test_dashboard_ads_include_creative_preview(conn):
     assert insights["ads"][0]["effective_status"] == "ACTIVE"
 
 
+def test_dashboard_utm_filter_uses_ad_level_rows(conn):
+    store.upsert_ad_account(conn, "111", "Account 111")
+    _insert_campaign(conn)
+    utm_row = normalize_insight(
+        {
+            "date_start": "2026-06-25",
+            "date_stop": "2026-06-25",
+            "campaign_id": "camp-1",
+            "campaign_name": "Campaign camp-1",
+            "adset_id": "set-utm",
+            "adset_name": "Set UTM",
+            "ad_id": "ad-utm",
+            "ad_name": "Ad UTM",
+            "spend": "2500",
+            "impressions": "1000",
+            "reach": "800",
+            "frequency": "1.25",
+            "clicks": "20",
+            "inline_link_clicks": "10",
+            "actions": [],
+            "action_values": [],
+        },
+        "111",
+        level="ad",
+        synced_at="2026-06-25T00:00:00+00:00",
+    )
+    store.upsert_insight_rows(conn, [utm_row], take_snapshot=False)
+    store.upsert_ad_creatives(
+        conn,
+        [
+            AdCreative(
+                ad_account_id="111",
+                ad_id="ad-utm",
+                creative_id="creative-utm",
+                effective_status="ACTIVE",
+                url_tags=(
+                    "utm_source=meta&utm_medium=paid_social"
+                    "&utm_campaign=clamoa_brandfit&utm_content=fb_feed"
+                ),
+                raw_json="{}",
+                synced_at="2026-06-25T00:00:00+00:00",
+            )
+        ],
+    )
+
+    summary = dashboard_data.get_summary(
+        conn,
+        start="2026-06-25",
+        end="2026-06-25",
+        target_action="landing_click",
+        utm_filter="utm",
+    )
+    assert summary["level"] == "ad"
+    assert summary["spend"] == 2500
+    assert summary["conversions"] == 10
+    assert summary["utm_ad_count"] == 1
+
+    insights = dashboard_data.get_insights(
+        conn,
+        start="2026-06-25",
+        end="2026-06-25",
+        target_action="landing_click",
+        utm_filter="utm",
+    )
+    assert [row["id"] for row in insights["ads"]] == ["ad-utm"]
+    assert insights["campaigns"][0]["spend"] == 2500
+    assert insights["utms"][0]["utm_campaign"] == "clamoa_brandfit"
+    assert insights["utms"][0]["ad_count"] == 1
+
+
+def test_landing_utm_events_group_traffic_sources(conn):
+    store.record_landing_utm_event(
+        conn,
+        event_name="PageView",
+        browser_event_id="pv-naver",
+        event_source_url=(
+            "https://clamoa.com/?utm_source=naver"
+            "&utm_medium=paid_search&utm_campaign=brandfit"
+        ),
+        session_id="s-naver",
+        captured_at="2026-06-25T00:00:00+00:00",
+    )
+    store.record_landing_utm_event(
+        conn,
+        event_name="Lead",
+        browser_event_id="lead-naver",
+        event_source_url="https://clamoa.com/#consult",
+        session_id="s-naver",
+        utm={
+            "utm_source": "naver",
+            "utm_medium": "paid_search",
+            "utm_campaign": "brandfit",
+        },
+        captured_at="2026-06-25T00:02:00+00:00",
+    )
+    store.record_landing_utm_event(
+        conn,
+        event_name="PageView",
+        browser_event_id="pv-google",
+        event_source_url="https://clamoa.com/?gclid=test-click",
+        session_id="s-google",
+        captured_at="2026-06-25T00:03:00+00:00",
+    )
+    store.record_landing_utm_event(
+        conn,
+        event_name="PageView",
+        browser_event_id="pv-meta",
+        event_source_url="https://clamoa.com/?fbclid=test-click",
+        session_id="s-meta",
+        captured_at="2026-06-25T00:04:00+00:00",
+    )
+    store.record_landing_utm_event(
+        conn,
+        event_name="PageView",
+        browser_event_id="pv-asinayo",
+        event_source_url="https://asinayo.example/?utm_source=naver",
+        session_id="s-asinayo",
+        captured_at="2026-06-25T00:05:00+00:00",
+    )
+
+    rows = {
+        row["traffic_source"]: row
+        for row in dashboard_data.get_traffic_sources(
+            conn,
+            start="2026-06-25",
+            end="2026-06-25",
+        )
+    }
+    assert rows["naver"]["clicks"] == 1
+    assert rows["naver"]["conversions"] == 1
+    assert rows["naver"]["conversion_rate"] == 100
+    assert rows["google"]["clicks"] == 1
+    assert rows["meta"]["clicks"] == 1
+
+    asinayo_rows = {
+        row["traffic_source"]: row
+        for row in dashboard_data.get_traffic_sources(
+            conn,
+            start="2026-06-25",
+            end="2026-06-25",
+            landing_key="asinayo",
+        )
+    }
+    assert asinayo_rows["naver"]["clicks"] == 1
+
+
 def test_sync_response_marks_expired_token():
     response = _sync_response(
         [

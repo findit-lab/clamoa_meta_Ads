@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
 import config
 from adintel import db
 from . import alerts, dashboard_data
+from .capi import ALLOWED_EVENT_NAMES, MetaCapiError, MetaConversionsClient, build_event_payload
 from .meta_api import MetaApiError, MetaInsightsClient, friendly_error_message, is_access_token_expired
 from .models import SyncResult
 from . import store
@@ -20,6 +23,34 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 app = FastAPI(title="Meta Ads Performance Dashboard")
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+if config.META_CAPI_ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.META_CAPI_ALLOWED_ORIGINS,
+        allow_methods=["POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
+
+
+class CapiBrowserEvent(BaseModel):
+    event_name: str
+    event_id: str = ""
+    event_source_url: str = ""
+    fbp: str = ""
+    fbc: str = ""
+    custom_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class LandingUtmEvent(BaseModel):
+    event_name: str = "PageView"
+    event_id: str = ""
+    event_source_url: str = ""
+    referrer: str = ""
+    session_id: str = ""
+    landing_key: str = ""
+    utm: dict[str, Any] = Field(default_factory=dict)
+    custom_data: dict[str, Any] = Field(default_factory=dict)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -52,6 +83,7 @@ def api_summary(
     campaign_id: Optional[str] = None,
     ad_id: Optional[str] = None,
     target_action: str = "landing_click",
+    utm_filter: str = "all",
 ):
     start, end = _range(start, end)
     conn = db.connect()
@@ -64,6 +96,7 @@ def api_summary(
             campaign_id=campaign_id,
             ad_id=ad_id,
             target_action=target_action,
+            utm_filter=utm_filter,
         )
     finally:
         conn.close()
@@ -78,6 +111,7 @@ def api_insights(
     ad_id: Optional[str] = None,
     target_action: str = "landing_click",
     trend_grain: str = "daily",
+    utm_filter: str = "all",
 ):
     start, end = _range(start, end)
     conn = db.connect()
@@ -91,6 +125,7 @@ def api_insights(
             ad_id=ad_id,
             target_action=target_action,
             trend_grain=trend_grain,
+            utm_filter=utm_filter,
         )
     finally:
         conn.close()
@@ -103,6 +138,53 @@ def api_alerts():
         return {"alerts": dashboard_data.get_alerts(conn)}
     finally:
         conn.close()
+
+
+@app.post("/api/utm/event")
+def api_utm_event(payload: LandingUtmEvent, request: Request):
+    if payload.event_name not in ALLOWED_EVENT_NAMES:
+        raise HTTPException(status_code=400, detail=f"unsupported event: {payload.event_name}")
+    conn = db.connect()
+    try:
+        store.record_landing_utm_event(
+            conn,
+            event_name=payload.event_name,
+            browser_event_id=payload.event_id,
+            event_source_url=payload.event_source_url or str(request.headers.get("referer") or request.url),
+            referrer=payload.referrer,
+            session_id=payload.session_id,
+            landing_key=payload.landing_key,
+            utm=payload.utm,
+            custom_data=payload.custom_data,
+        )
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/meta/capi")
+def api_meta_capi(payload: CapiBrowserEvent, request: Request):
+    try:
+        event = build_event_payload(
+            event_name=payload.event_name,
+            event_id=payload.event_id or f"server-{store.now_iso()}",
+            event_source_url=payload.event_source_url or str(request.url),
+            client_ip_address=_client_ip(request),
+            client_user_agent=request.headers.get("user-agent", ""),
+            fbp=payload.fbp,
+            fbc=payload.fbc,
+            custom_data=payload.custom_data,
+        )
+        response = MetaConversionsClient().send_event(event)
+        return {
+            "ok": True,
+            "events_received": response.get("events_received", 0),
+            "fbtrace_id": response.get("fbtrace_id", ""),
+            "messages": response.get("messages", []),
+        }
+    except MetaCapiError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
 
 @app.post("/api/sync")
@@ -203,3 +285,10 @@ def _sync_response(
 def _range(start: str | None, end: str | None) -> tuple[str, str]:
     default_start, default_end = dashboard_data.default_range(days=7)
     return start or default_start, end or default_end
+
+
+def _client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.client.host if request.client else ""

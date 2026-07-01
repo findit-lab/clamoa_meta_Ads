@@ -61,6 +61,26 @@ META_ALERT_MIN_SPEND = float(os.getenv("META_ALERT_MIN_SPEND", "50000"))
 META_DASHBOARD_HOST = os.getenv("META_DASHBOARD_HOST", "127.0.0.1").strip()
 META_DASHBOARD_PORT = int(os.getenv("META_DASHBOARD_PORT", "8000"))
 
+# ── Meta Pixel + Conversions API (Clamoa 랜딩 기본) ─────────────────
+META_PIXEL_ID = (
+    os.getenv("CLAMOA_META_PIXEL_ID")
+    or os.getenv("META_PIXEL_ID")
+    or ""
+).strip()
+META_CAPI_ACCESS_TOKEN = (
+    os.getenv("CLAMOA_META_CAPI_ACCESS_TOKEN")
+    or os.getenv("META_CAPI_ACCESS_TOKEN")
+    or META_ACCESS_TOKEN
+    or ""
+).strip()
+META_CAPI_TEST_EVENT_CODE = os.getenv("META_CAPI_TEST_EVENT_CODE", "").strip()
+META_CAPI_TIMEOUT_SECONDS = int(os.getenv("META_CAPI_TIMEOUT_SECONDS", "10"))
+META_CAPI_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("META_CAPI_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 # ── 광고 소재 생성 (GPT Image) ─────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 IMAGE_MODEL = os.getenv("ADINTEL_IMAGE_MODEL", "gpt-image-2").strip()
