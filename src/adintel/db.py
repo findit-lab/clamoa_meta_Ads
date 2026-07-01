@@ -458,7 +458,31 @@ class PostgresConnection:
 
 
 def _postgres_sql(sql: str) -> str:
-    return sql.replace("?", "%s")
+    out: list[str] = []
+    in_single_quote = False
+    in_double_quote = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'":
+            out.append(ch)
+            if in_single_quote and i + 1 < len(sql) and sql[i + 1] == "'":
+                out.append(sql[i + 1])
+                i += 2
+                continue
+            if not in_double_quote:
+                in_single_quote = not in_single_quote
+        elif ch == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            out.append(ch)
+        elif ch == "%":
+            out.append("%%")
+        elif ch == "?" and not in_single_quote and not in_double_quote:
+            out.append("%s")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def _split_sql_statements(script: str) -> list[str]:

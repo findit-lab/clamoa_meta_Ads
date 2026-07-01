@@ -16,6 +16,24 @@ def test_postgres_placeholder_translation():
     )
 
 
+def test_postgres_sql_escapes_literal_percent_patterns():
+    sql = (
+        "UPDATE landing_utm_events SET landing_key='clamoa' "
+        "WHERE lower(event_source_url) LIKE '%clamoa%' AND browser_event_id=?"
+    )
+    assert db._postgres_sql(sql) == (
+        "UPDATE landing_utm_events SET landing_key='clamoa' "
+        "WHERE lower(event_source_url) LIKE '%%clamoa%%' AND browser_event_id=%s"
+    )
+
+
+def test_postgres_sql_keeps_question_marks_inside_literals():
+    sql = "SELECT 'https://clamoa.com/?utm_source=meta' AS url, ? AS source"
+    assert db._postgres_sql(sql) == (
+        "SELECT 'https://clamoa.com/?utm_source=meta' AS url, %s AS source"
+    )
+
+
 def test_db_row_supports_sqlite_row_access_patterns():
     row = db.DbRow(["count", "name"], [2, "clamoa"])
     assert row[0] == 2
